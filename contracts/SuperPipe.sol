@@ -15,12 +15,15 @@ import {
 } from "@superfluid-finance/ethereum-contracts/contracts/interfaces/superfluid/ISuperfluid.sol";
 import { SuperAppBase } from "@superfluid-finance/ethereum-contracts/contracts/apps/SuperAppBase.sol";
 
+import "../interfaces/Vault.sol";
+
 contract SuperPipe is SuperAppBase {
     using SafeMath for uint256;
     ISuperfluid private host;
     IConstantFlowAgreementV1 private cfa;
     ISuperToken private acceptedToken;
-    address private vault;
+
+    Vault private vault;
 
     address[] internal depositors;
 
@@ -33,11 +36,13 @@ contract SuperPipe is SuperAppBase {
     constructor(
         ISuperfluid _host,
         IConstantFlowAgreementV1 _cfa,
-        ISuperToken _acceptedToken
+        ISuperToken _acceptedToken,
+        address _vaultAddress
     ) {
         require(address(_host) != address(0), "Host is zero address.");
         require(address(_cfa) != address(0), "CFA is zero address.");
         require(address(_acceptedToken) != address(0), "Token is zero address.");
+        require(address(_vaultAddress) != address(0), "Vault is zero address.");
         host = _host;
         cfa = _cfa;
         acceptedToken = _acceptedToken;
