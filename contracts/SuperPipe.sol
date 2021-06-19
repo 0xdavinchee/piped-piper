@@ -17,14 +17,19 @@ import { SuperAppBase } from "@superfluid-finance/ethereum-contracts/contracts/a
 
 contract SuperPipe is SuperAppBase {
     using SafeMath for uint256;
+
+    struct Deposit {
+        uint256 amount;
+        bool isDepositor;
+    }
+
     ISuperfluid private host;
     IConstantFlowAgreementV1 private cfa;
     ISuperToken private acceptedToken;
     address private vault;
 
-    address[] internal depositors;
-
-    mapping(address => uint256) private userDepositedAmounts;
+    mapping(address => Deposit) private userDepositedAmounts;
+    uint256 private totalDeposited;
 
     event DepositorAdded(address depositor);
     event DepositorRemoved(address depositor);
@@ -58,22 +63,17 @@ contract SuperPipe is SuperAppBase {
     /**
      * @dev Returns whether _address is a depositor and the index of the depositor.
      */
-    function _isDepositor(address _address) private view returns (bool, uint256) {
-        for (uint256 i = 0; i < depositors.length; i++) {
-            if (_address == depositors[i]) {
-                return (true, i);
-            }
-        }
-        return (false, 0);
+    function _isDepositor(address _address) private view returns (bool) {
+        return userDepositedAmounts[_address].isDepositor;
     }
 
     /**
      * @dev Adds _depositor if the _depositor is not currently one.
      */
     function _addDepositor(address _depositor) private {
-        (bool isDepositor, ) = _isDepositor(_depositor);
+        bool isDepositor = _isDepositor(_depositor);
         if (!isDepositor) {
-            depositors.push(_depositor);
+            userDepositedAmounts[_depositor] = Deposit(0, true);
         }
     }
 
@@ -81,9 +81,9 @@ contract SuperPipe is SuperAppBase {
      * @dev Removes _depositor from depositor the depositors array if _depositor is one.
      */
     function removeDepositor(address _depositor) private {
-        (bool isDepositor, uint256 index) = _isDepositor(_depositor);
+        bool isDepositor = _isDepositor(_depositor);
         if (isDepositor) {
-            depositors[index] = depositors[depositors.length - 1];
+            delete userDepositedAmounts[_depositor];
         }
     }
 
@@ -91,16 +91,7 @@ contract SuperPipe is SuperAppBase {
      * @dev Returns the amount deposited into a vault by _depositor.
      */
     function depositBalanceOf(address _depositor) private view returns (uint256) {
-        return userDepositedAmounts[_depositor];
-    }
-
-    /**
-     * @dev Returns the total deposit balance of all depositors.
-     */
-    function totalDepositBalance() private view returns (uint256 total) {
-        for (uint256 i; i < depositors.length; i++) {
-            total.add(depositBalanceOf(depositors[i]));
-        }
+        return userDepositedAmounts[_depositor].amount;
     }
 
     /**************************************************************************
@@ -144,8 +135,7 @@ contract SuperPipe is SuperAppBase {
      * calculated based on their share of the SuperPipe deposits.
      */
     function vaultRewardBalanceOf(address _depositor, uint256 _vaultBalance) private view returns (uint256) {
-        uint256 totalDeposited = totalDepositBalance();
-        return totalDeposited == 0 ? 0 : userDepositedAmounts[_depositor].div(totalDeposited).mul(_vaultBalance);
+        return totalDeposited == 0 ? 0 : userDepositedAmounts[_depositor].amount.div(totalDeposited).mul(_vaultBalance);
     }
 
     /**************************************************************************
