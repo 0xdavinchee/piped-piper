@@ -17,10 +17,10 @@
   "include": [
     "artifacts/**/*",
     "artifacts/**/*.json",
-    "scripts/**/*",
     "tasks/**/*",
     "test/**/*",
     "typechain/**/*",
-    "types/**/*"
+    "types/**/*",
+    "deploy"
   ]
 }

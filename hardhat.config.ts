@@ -1,7 +1,8 @@
-import "@nomiclabs/hardhat-waffle";
 import "@typechain/hardhat";
 import "hardhat-gas-reporter";
 import "solidity-coverage";
+import "hardhat-deploy";
+import "hardhat-deploy-ethers";
 
 import "./tasks/accounts";
 import "./tasks/clean";
@@ -22,6 +23,8 @@ const chainIds = {
   mainnet: 1,
   rinkeby: 4,
   ropsten: 3,
+  "polygon-mainnet": 137,
+  "polygon-mumbai": 80001,
 };
 
 // Ensure that we have all the environment variables we need.
@@ -68,6 +71,8 @@ const config: HardhatUserConfig = {
     kovan: createTestnetConfig("kovan"),
     rinkeby: createTestnetConfig("rinkeby"),
     ropsten: createTestnetConfig("ropsten"),
+    matic: createTestnetConfig("polygon-mainnet"),
+    mumbai: createTestnetConfig("polygon-mumbai"),
   },
   paths: {
     artifacts: "./artifacts",
@@ -76,7 +81,7 @@ const config: HardhatUserConfig = {
     tests: "./test",
   },
   solidity: {
-    version: "0.8.5",
+    version: "0.7.1",
     settings: {
       metadata: {
         // Not including the metadata hash
@@ -94,6 +99,9 @@ const config: HardhatUserConfig = {
   typechain: {
     outDir: "typechain",
     target: "ethers-v5",
+  },
+  namedAccounts: {
+    deployer: 0,
   },
 };
 
