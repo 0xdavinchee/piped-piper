@@ -12,7 +12,7 @@ contract StakeDaoPipe is Pipe {
         address _vault
     ) Pipe(_host, _cfa, _acceptedToken, _vault) {}
 
-    function _deposit(uint256 amount) public override {
+    function _depositToVault(uint256 amount) public override {
         // this will implement stakedao's deposit function and override the one in Pipe
         // and utilize it here.
     }
