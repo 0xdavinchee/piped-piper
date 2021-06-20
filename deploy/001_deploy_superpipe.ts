@@ -6,12 +6,13 @@ const func: DeployFunction = async (hre: HardhatRuntimeEnvironment) => {
     const { deployer } = await getNamedAccounts();
     const { deploy } = deployments;
 
-    await deploy("SuperPipe", {
+    // TODO: THIS VAULT ADDRESS IS INCORRECT
+    await deploy("StakeDaoPipe", {
         from: deployer,
-        args: [process.env.HOST_ADDRESS, process.env.CFA_ADDRESS, process.env.TOKEN_ADDRESS],
+        args: [process.env.HOST_ADDRESS, process.env.CFA_ADDRESS, process.env.TOKEN_ADDRESS, process.env.TOKEN_ADDRESS],
         log: true,
     });
 };
 
 export default func;
-func.tags = ["SuperPipe"];
+func.tags = ["StakeDaoPipe"];
