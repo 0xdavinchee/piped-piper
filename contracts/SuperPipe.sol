@@ -5,6 +5,7 @@ pragma experimental ABIEncoderV2;
 import "hardhat/console.sol";
 
 import { SafeMath } from "@openzeppelin/contracts/math/SafeMath.sol";
+import { SignedSafeMath } from "@openzeppelin/contracts/math/SignedSafeMath.sol";
 import { SafeCast } from "@openzeppelin/contracts/utils/SafeCast.sol";
 
 import {
@@ -18,19 +19,14 @@ import {
 } from "@superfluid-finance/ethereum-contracts/contracts/interfaces/superfluid/ISuperfluid.sol";
 import { SuperAppBase } from "@superfluid-finance/ethereum-contracts/contracts/apps/SuperAppBase.sol";
 
-// TODO: User should be able to stop flow without withdrawing.
-// TODO: Refactor the code so that it doesn't use a depositors array
-// and we track userWithdrawnAmounts rather than userDepositedAmounts
-// using the [(totalUserStream/grandTotal)*vault_balance ]- userWithdrawnAmounts[user]
-
 contract SuperPipe is SuperAppBase {
     using SafeMath for uint256;
-    using SafeMath for int256;
+    using SignedSafeMath for int256;
     using SafeCast for uint256;
     using SafeCast for int256;
 
-    struct Deposit {
-        uint256 amount;
+    struct UserWithdrawn {
+        uint256 amount; // total amount user has withdrawn from vaults
         bool isFlowing;
     }
 
@@ -39,9 +35,7 @@ contract SuperPipe is SuperAppBase {
     ISuperToken private acceptedToken;
     address private vault;
 
-    address[] private depositors;
-    mapping(address => Deposit) private userDepositedAmounts;
-    uint256 private totalDeposited;
+    mapping(address => UserWithdrawn) private userWithdrawnAmounts;
 
     event DepositorAdded(address depositor);
     event DepositorRemoved(address depositor);
@@ -77,7 +71,7 @@ contract SuperPipe is SuperAppBase {
      * @dev Returns whether _address has a flow open into the SuperPipe and the index of the depositor.
      */
     function _isFlowing(address _address) private view returns (bool) {
-        return userDepositedAmounts[_address].isFlowing;
+        return userWithdrawnAmounts[_address].isFlowing;
     }
 
     /**
@@ -86,30 +80,17 @@ contract SuperPipe is SuperAppBase {
     function _addDepositor(address _depositor) private {
         bool isDepositor = _isFlowing(_depositor);
         if (!isDepositor) {
-            userDepositedAmounts[_depositor] = Deposit(0, true);
-            depositors.push(_depositor);
+            userWithdrawnAmounts[_depositor] = UserWithdrawn(0, true);
         }
     }
 
     /**
      * @dev Removes _depositor from the depositor mapping AND depositors array if they have an open flow.
      */
-    function removeDepositor(address _depositor) private {
+    function _removeDepositor(address _depositor) private {
         bool isDepositor = _isFlowing(_depositor);
         if (isDepositor) {
-            delete userDepositedAmounts[_depositor];
-            uint256 index;
-
-            // TODO: We can prevent looping here by keeping the index
-            // of the depositor in the mapping.
-            for (uint256 i = 0; i < depositors.length; i++) {
-                if (_depositor == depositors[i]) {
-                    index = i;
-                    break;
-                }
-            }
-            depositors[index] = depositors[depositors.length - 1];
-            depositors.pop();
+            delete userWithdrawnAmounts[_depositor];
         }
     }
 
@@ -117,7 +98,7 @@ contract SuperPipe is SuperAppBase {
      * @dev Returns the amount deposited into a vault by _depositor.
      */
     function depositBalanceOf(address _depositor) private view returns (uint256) {
-        return userDepositedAmounts[_depositor].amount;
+        return userWithdrawnAmounts[_depositor].amount;
     }
 
     /**************************************************************************
@@ -128,10 +109,20 @@ contract SuperPipe is SuperAppBase {
      * @dev Called after someone makes a deposit into the SuperPipe Super App and updates
      * the internal state accordingly.
      */
-    function _depositIntoSuperApp(bytes calldata _ctx) private returns (bytes memory ctx) {
+    function _depositIntoSuperPipe(bytes calldata _ctx) private returns (bytes memory ctx) {
         ctx = _ctx;
         address depositor = host.decodeCtx(_ctx).msgSender;
         _addDepositor(depositor);
+    }
+
+    /**
+     * @dev Called after someone makes a deposit into the SuperPipe Super App and updates
+     * the internal state accordingly.
+     */
+    function _closeSuperPipeStream(bytes calldata _ctx) private returns (bytes memory ctx) {
+        ctx = _ctx;
+        address depositor = host.decodeCtx(_ctx).msgSender;
+        _removeDepositor(depositor);
     }
 
     /**
@@ -143,48 +134,38 @@ contract SuperPipe is SuperAppBase {
         ISuperToken superToken = ISuperToken(acceptedToken);
         // this should get the available current streamed in amount from users
         (int256 superPipeAvailableBalance, , , ) = superToken.realtimeBalanceOfNow(address(this));
-
-        // TODO: call the function w/ the VaultInterface to send funds from SuperPipe to vault.
-        for (uint256 i; i < depositors.length; i++) {
-            // this will be negative as the users are streaming money out to the superpipe
-            (int256 realtimeBalance, , , ) = superToken.realtimeBalanceOfNow(depositors[i]);
-            if (realtimeBalance < 0) {
-                userDepositedAmounts[depositors[i]].amount = realtimeBalance.toUint256();
-            }
-        }
-        // require(superPipeAvailableBalance == totalAmountAfterIncrementingOverDepositors)
+        uint256 amount = superPipeAvailableBalance.toUint256();
 
         // TODO: there is likely a missing step here where we actually move the available balance into the
         // ownership of the superPipe contract
-        superToken.downgrade(superPipeAvailableBalance.toUint256());
+        superToken.downgrade(amount);
         address underlyingToken = superToken.getUnderlyingToken();
 
-        // TODO: Look into using safeIncreaseAllowance
-        ISuperToken(underlyingToken).increaseAllowance(vault, superPipeAvailableBalance.toUint256());
+        ISuperToken(underlyingToken).increaseAllowance(vault, amount);
 
-        // TODO: get total flowed amount of users
-        // downgrade the supertokens of all flows and send into vault
-        // update the deposit amount of all the users who have streamed in any real amount
-        // into the super pipe
-        // increment totalDeposited
+        // TODO: This will be replaced by the vault deposit function
+        ISuperToken(underlyingToken).transferFrom(address(this), vault, amount);
     }
 
     /**
      * @dev Withdraws the tokens from a vault and updates the state accordingly.
      */
-    function withdrawFromSuperApp() external {
-        require(userDepositedAmounts[msg.sender].isFlowing == true, "Not a depositor.");
+    function withdrawFromSuperApp() public {
+        require(userWithdrawnAmounts[msg.sender].isFlowing == true, "Not a depositor.");
         uint256 totalVaultBalance = 0; // TODO: Get address(this) vault balance (likely requires Vault interface)
-        uint256 withdrawerVaultBalance = vaultRewardBalanceOf(msg.sender, totalVaultBalance);
+        uint256 withdrawerVaultAmount = vaultRewardBalanceOf(msg.sender, totalVaultBalance);
 
-        // this will be a negative number
+        // TODO: Requires the vault interface withdraw here.
+        // vault.withdraw(withdrawerVaultAmount);
+
+        // this will be a negative number (the net flow of the depositor)
         (int256 withdrawerAvailableBalance, , , ) = ISuperToken(acceptedToken).realtimeBalanceOfNow(msg.sender);
 
-        // deposited vault amount (incl. rewards) + current stream balance
-        uint256 withdrawAmount = withdrawerVaultBalance.add(withdrawerAvailableBalance.toUint256());
+        // withdrawable vault amount (incl. rewards) - (-currrent negative stream net flow)
+        uint256 withdrawAmount = withdrawerVaultAmount.sub(withdrawerAvailableBalance.toUint256());
 
         // update the user's deposit amount
-        userDepositedAmounts[msg.sender].amount = 0;
+        userWithdrawnAmounts[msg.sender].amount = userWithdrawnAmounts[msg.sender].amount.add(withdrawerVaultAmount);
 
         // Withdraw vault balance
         bool success = ISuperToken(acceptedToken).transfer(msg.sender, withdrawAmount);
@@ -192,10 +173,11 @@ contract SuperPipe is SuperAppBase {
     }
 
     /**
-     * @dev When the stops their stream and withdraws, this handles the logic of removing the depositor
+     * @dev When the stops their stream and withdraws, this handles the logic of removing them as a depositor
      * and updating the state accordingly.
      */
     function _withdrawFromSuperAppAndStopFlowing() private {
+        withdrawFromSuperApp();
         host.callAgreement(
             cfa,
             abi.encodeWithSelector(cfa.deleteFlow.selector, msg.sender, address(this), new bytes(0)),
@@ -207,15 +189,20 @@ contract SuperPipe is SuperAppBase {
      * @dev Returns _depositor deposit in a vault and any rewards accrued,
      * calculated based on their share of the SuperPipe deposits.
      */
-    function vaultRewardBalanceOf(address _depositor, uint256 _vaultBalance) private view returns (uint256) {
-        return totalDeposited == 0 ? 0 : userDepositedAmounts[_depositor].amount.div(totalDeposited).mul(_vaultBalance);
+    function vaultRewardBalanceOf(address _withdrawer, uint256 _vaultBalance) public view returns (uint256) {
+        // this will be 0 or a negative number
+        (int256 withdrawerTotalStreamedToContract, , , ) = ISuperToken(acceptedToken).realtimeBalanceOfNow(_withdrawer);
+        // this will be a negative number
+        (int256 totalStreamedToContract, , , ) = ISuperToken(acceptedToken).realtimeBalanceOfNow(address(this));
+        uint256 totalVaultWithdrawableAmount =
+            withdrawerTotalStreamedToContract.div(totalStreamedToContract).toUint256().mul(_vaultBalance);
+
+        return totalVaultWithdrawableAmount.sub(userWithdrawnAmounts[_withdrawer].amount);
     }
 
     /**************************************************************************
      * SuperApp callbacks
      *************************************************************************/
-
-    // TODO: Consider any checks that may need to be made beforeAgreementCreated.
 
     /**
      * @dev Callback that is called once a new flow agreement being created.
@@ -227,22 +214,24 @@ contract SuperPipe is SuperAppBase {
         bytes calldata, // _agreementData
         bytes calldata _ctx
     ) external onlyExpected(_superToken, _agreementClass) onlyHost returns (bytes memory) {
-        return _depositIntoSuperApp(_ctx);
+        return _depositIntoSuperPipe(_ctx);
     }
 
     /**
      * @dev Callback that is called after a new flow agreement is terminated.
      */
-    // function afterAgreementTerminated(
-    //     ISuperToken _superToken,
-    //     address _agreementClass,
-    //     bytes32 _agreementId,
-    //     bytes calldata _agreementData,
-    //     bytes calldata _ctx
-    // ) external override returns (bytes memory) {
-    //     // TODO: user creates flow
-    //     // we add them to array of stakers
-    // }
+    function afterAgreementTerminated(
+        ISuperToken _superToken,
+        address _agreementClass,
+        bytes32, // _agreementId
+        bytes calldata, // _agreementData
+        bytes calldata _ctx
+    ) external returns (bytes memory) {
+        if (!_isAccepted(_superToken) || !_isCFAv1(_agreementClass)) {
+            return _ctx;
+        }
+        return _closeSuperPipeStream(_ctx);
+    }
 
     /**************************************************************************
      * Utilities
