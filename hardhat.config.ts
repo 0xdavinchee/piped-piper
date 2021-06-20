@@ -66,6 +66,9 @@ const config: HardhatUserConfig = {
                 mnemonic,
             },
             chainId: chainIds.hardhat,
+            forking: {
+                url: "https://polygon-mumbai.infura.io/v3/" + infuraApiKey,
+            },
         },
         goerli: createTestnetConfig("goerli"),
         kovan: createTestnetConfig("kovan"),
