@@ -134,13 +134,12 @@ contract SuperPipe is SuperAppBase {
         ISuperToken superToken = ISuperToken(acceptedToken);
         // this should get the available current streamed in amount from users
         (int256 superPipeAvailableBalance, , , ) = superToken.realtimeBalanceOfNow(address(this));
+        require(superPipeAvailableBalance > 0, "There is nothing to deposit into the vault");
+
         uint256 amount = superPipeAvailableBalance.toUint256();
-
-        // TODO: there is likely a missing step here where we actually move the available balance into the
-        // ownership of the superPipe contract
         superToken.downgrade(amount);
-        address underlyingToken = superToken.getUnderlyingToken();
 
+        address underlyingToken = superToken.getUnderlyingToken();
         ISuperToken(underlyingToken).increaseAllowance(vault, amount);
 
         // TODO: This will be replaced by the vault deposit function
@@ -163,6 +162,7 @@ contract SuperPipe is SuperAppBase {
 
         // withdrawable vault amount (incl. rewards) - (-currrent negative stream net flow)
         uint256 withdrawAmount = withdrawerVaultAmount.sub(withdrawerAvailableBalance.toUint256());
+        require(withdrawAmount > 0, "There is nothing to withdraw.");
 
         // update the user's deposit amount
         userWithdrawnAmounts[msg.sender].amount = userWithdrawnAmounts[msg.sender].amount.add(withdrawerVaultAmount);
