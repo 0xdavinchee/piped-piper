@@ -82,9 +82,10 @@ contract Pipe is Vault {
      * since the deposit.
      */
     function withdrawableFlowAmount(address _depositor, int96 _previousFlowRate) internal view returns (int256) {
+        int96 positiveFlowRate = _previousFlowRate.mul(-1, "Int96 Multiplication error.");
         int256 addAmount =
             isDepositAfterUpdate(_depositor) ? 0 : userWithdrawnAmounts[_depositor].flowAmountSinceUpdate;
-        block.timestamp.toInt256().sub(getLastUpdatedTime(_depositor).toInt256()).mul(_previousFlowRate).add(addAmount);
+        block.timestamp.toInt256().sub(getLastUpdatedTime(_depositor).toInt256()).mul(positiveFlowRate).add(addAmount);
     }
 
     /**
