@@ -13,9 +13,10 @@ interface IPipe {
     function pipeFlowBalance() external view returns (uint256);
 
     /**
-     * @dev Sets the flowUpdatedTimestamp property of the userWithdrawnAmounts mapping.
+     * @dev Get the total withdrawable balance of _withdrawer: the flowed in amount +
+     * their deposit/rewards in the vault.
      */
-    function setFlowUpdateTimestamp(address _depositor) external;
+    function totalWithdrawableBalance(address _withdrawer) external view returns (int256);
 
     /**
      * @dev Updates the flowUpdatedTimestamp and flowAmountSinceUpdate properties

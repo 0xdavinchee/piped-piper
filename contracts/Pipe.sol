@@ -82,17 +82,11 @@ contract Pipe is Vault {
      * since the deposit.
      */
     function withdrawableFlowAmount(address _depositor, int96 _previousFlowRate) internal view returns (int256) {
-        int96 positiveFlowRate = _previousFlowRate.mul(-1, "Int96 Multiplication error.");
+        int96 positiveFlowRate =
+            _previousFlowRate < 0 ? _previousFlowRate.mul(-1, "Int96 Multiplication error.") : _previousFlowRate;
         int256 addAmount =
             isDepositAfterUpdate(_depositor) ? 0 : userWithdrawnAmounts[_depositor].flowAmountSinceUpdate;
         block.timestamp.toInt256().sub(getLastUpdatedTime(_depositor).toInt256()).mul(positiveFlowRate).add(addAmount);
-    }
-
-    /**
-     * @dev Sets the flowUpdatedTimestamp property of the userWithdrawnAmounts mapping.
-     */
-    function setFlowUpdateTimestamp(address _depositor) external {
-        userWithdrawnAmounts[_depositor].flowUpdatedTimestamp = block.timestamp;
     }
 
     /**
@@ -196,6 +190,13 @@ contract Pipe is Vault {
     function pipeFlowBalance() external view returns (int256) {
         (int256 availableBalance, , , ) = ISuperToken(acceptedToken).realtimeBalanceOfNow(address(this));
         return availableBalance;
+    }
+
+    function totalWithdrawableBalance(address _withdrawer) external view returns (int256) {
+        (, int96 flowRate, , ) = cfa.getFlow(acceptedToken, _withdrawer, address(this));
+        uint256 totalVaultBalance = _vaultBalanceOf(address(this));
+        int256 availableFlowWithdraw = withdrawableFlowAmount(_withdrawer, flowRate);
+        return availableFlowWithdraw.add(vaultRewardBalanceOf(_withdrawer, totalVaultBalance).toInt256());
     }
 
     /**
