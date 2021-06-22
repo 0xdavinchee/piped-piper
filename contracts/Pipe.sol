@@ -37,7 +37,6 @@ contract Pipe is Vault {
 
     event DepositFundsToVault(uint256 amount, uint256 timestamp);
     event WithdrawFromSuperApp(address indexed withdrawer, uint256 amount);
-    event StopFlow();
 
     constructor(
         ISuperfluid _host,
@@ -130,28 +129,14 @@ contract Pipe is Vault {
     /**
      * @dev Withdraws the tokens from a vault and updates the state accordingly.
      */
-    function withdraw() external {
-        _withdraw();
-    }
-
-    /**
-     * @dev When the stops their flow and withdraws, this handles the logic of removing them as a depositor
-     * and updating the state accordingly.
-     */
-    function _withdrawAndStopFlowing() private {
-        _withdraw();
-        host.callAgreement(
-            cfa,
-            abi.encodeWithSelector(cfa.deleteFlow.selector, msg.sender, address(this), new bytes(0)),
-            "0x"
-        );
-        emit StopFlow();
+    function withdraw(int96 _flowRate) external {
+        _withdraw(_flowRate);
     }
 
     /**
      * @dev Withdraws the tokens from a vault as well as the flow amount and updates the state accordingly.
      */
-    function _withdraw() internal {
+    function _withdraw(int96 _flowRate) internal {
         // gets the address of the vault
         uint256 totalVaultBalance = _vaultBalanceOf(address(this));
 
@@ -160,8 +145,7 @@ contract Pipe is Vault {
         // withdraw from the vault
         _withdrawFromVault(withdrawerVaultAmount);
 
-        (, int96 flowRate, , ) = cfa.getFlow(acceptedToken, msg.sender, address(this));
-        int256 availableFlowWithdraw = withdrawableFlowAmount(msg.sender, flowRate);
+        int256 availableFlowWithdraw = withdrawableFlowAmount(msg.sender, _flowRate);
 
         // withdrawable vault amount (incl. rewards) + user's withdrawableFlowAmount
         uint256 withdrawableAmount = withdrawerVaultAmount.add(availableFlowWithdraw.toUint256());
