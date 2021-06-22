@@ -14,21 +14,38 @@ import {
 import { SuperAppBase } from "@superfluid-finance/ethereum-contracts/contracts/apps/SuperAppBase.sol";
 import { IPipe } from "./interfaces/IPipe.sol";
 import { SignedSafeMath } from "@openzeppelin/contracts/math/SignedSafeMath.sol";
+import { Int96SafeMath } from "@superfluid-finance/ethereum-contracts/contracts/utils/Int96SafeMath.sol";
+
+// TODO: There is a limit to how many pipes can be connected to this SuperRouter.
+// TODO: Currently the implementation of this is incorrect, we are updating/creating/removing the
+// flow for the entire
 
 contract SuperRouter is SuperAppBase {
     int96 private constant ONE_HUNDRED_PERCENT = 1000;
 
     using SignedSafeMath for int256;
+    using Int96SafeMath for int96;
 
     struct PipeFlowData {
         int96 percentage; // percentage will be between 0 and 1000 (allows one decimal place of contrast)
         address pipeAddress;
     }
+    struct UserAllocation {
+        int96 totalFlowRate;
+        mapping(address => Allocation) allocations;
+    }
+    struct Allocation {
+        int96 flowRate;
+        int96 percentage;
+    }
+
     ISuperfluid private host;
     IConstantFlowAgreementV1 private cfa;
     ISuperToken private acceptedToken;
 
     mapping(address => bool) private validPipeAddresses;
+    mapping(address => int96) private superRouterToPipeFlowRates;
+    mapping(address => UserAllocation) private userAllocations;
 
     constructor(
         ISuperfluid _host,
@@ -60,10 +77,15 @@ contract SuperRouter is SuperAppBase {
      */
     function withdraw(address[] memory _pipeAddresses) public {
         for (uint256 i; i < _pipeAddresses.length; i++) {
-            IPipe pipe = IPipe(_pipeAddresses[i]);
-            if (pipe.totalWithdrawableBalance(msg.sender) > 0) {
-                pipe.withdraw();
-            }
+            withdrawFromVault(_pipeAddresses[i]);
+        }
+    }
+
+    /** @dev Withdraws your funds from a single vault/pipe. */
+    function withdrawFromVault(address _pipeAddress) public {
+        IPipe pipe = IPipe(_pipeAddress);
+        if (pipe.totalWithdrawableBalance(msg.sender) > 0) {
+            pipe.withdraw();
         }
     }
 
@@ -79,13 +101,18 @@ contract SuperRouter is SuperAppBase {
     }
 
     /**
-     * @dev A user can call this to set up a flow to the SuperRouter.
+     * @dev Users will call this to set up the initial agreement between themselves and the SuperRouter.
      */
     function setupFlows(
         PipeFlowData[] memory _pipeFlowData,
         int96 _flowRate,
         ISuperToken _inputToken
-    ) public {
+    ) public isFullyAllocated(_pipeFlowData) {
+        int96 totalPercentage;
+        for (uint256 i; i < _pipeFlowData.length; i++) {
+            totalPercentage = totalPercentage + _pipeFlowData[i].percentage;
+        }
+        require(totalPercentage == ONE_HUNDRED_PERCENT, "Your flows don't add up to 100%.");
         host.callAgreement(
             cfa,
             abi.encodeWithSelector(cfa.createFlow.selector, _inputToken, address(this), _flowRate, new bytes(0)),
@@ -93,33 +120,129 @@ contract SuperRouter is SuperAppBase {
         );
     }
 
+    /**
+     * @dev User will call this to update the agreement between themselves and the SuperRouter.
+     */
+    function modifyFlows(
+        PipeFlowData[] memory _pipeFlowData,
+        int96 _flowRate,
+        ISuperToken _inputToken
+    ) public isFullyAllocated(_pipeFlowData) {
+        host.callAgreement(
+            cfa,
+            abi.encodeWithSelector(cfa.updateFlow.selector, _inputToken, address(this), _flowRate, new bytes(0)),
+            abi.encode(_pipeFlowData)
+        );
+    }
+
+    /** @dev Creates the initial flow to a pipe.
+     * This will only occur once for each pipe, as there can only be one flow between two accounts.
+     * We will update the state to track the users totalFlowRate AND % allocation of the user to the pipe.
+     */
     function _createFlowToPipe(
         address _pipeAddress,
         int96 _percentage,
+        int96 _totalUserToRouterFlowRate,
+        address _sender,
+        address _agreementClass,
+        bytes calldata _ctx
+    ) internal returns (bytes memory newCtx) {
+        require(
+            _percentage > 0 && _percentage <= ONE_HUNDRED_PERCENT,
+            "Your percentage is outside of the acceptable range."
+        );
+
+        // calculate the flowRate allocated to this _pipeAddress
+        int96 pipeFlowRate = mulDiv(_percentage, _totalUserToRouterFlowRate, ONE_HUNDRED_PERCENT);
+        IPipe(_pipeAddress).setFlowWithdrawData(_sender, 0);
+
+        // set the flow rate and % allocation of an individual user
+        userAllocations[_sender].allocations[_pipeAddress] = Allocation(pipeFlowRate, _percentage);
+
+        // increment the total flow rate of the SuperRouter to the particular pipe address
+        superRouterToPipeFlowRates[_pipeAddress] =
+            superRouterToPipeFlowRates[_pipeAddress] +
+            _totalUserToRouterFlowRate;
+
+        // create agreement between user and SuperRouter
+        (newCtx, ) = host.callAgreementWithContext(
+            ISuperAgreement(_agreementClass),
+            abi.encodeWithSelector(cfa.createFlow.selector, _pipeAddress, pipeFlowRate, _ctx),
+            "0x", // userData currently just set to empty, but we can use this to do further actions in Pipe callbacks
+            _ctx
+        );
+    }
+
+    /** @dev Updates the routers' flowRate to a pipe when someone new starts to flow.
+     * We will update the local state in here to reflect the new flow rate to the pipe as well
+     * as the users' updated allocation.
+     */
+    function _updateFlowToPipe(
+        address _pipeAddress,
+        int96 _percentage,
+        address _sender,
+        int96 _oldUserToSuperRouterFlowRate,
         ISuperToken _token,
         address _agreementClass,
         bytes32 _agreementId,
         bytes calldata _ctx
     ) internal returns (bytes memory newCtx) {
-        require(validPipeAddresses[_pipeAddress] == true, "This is not a registered vault address.");
         require(
             _percentage >= 0 && _percentage <= ONE_HUNDRED_PERCENT,
             "Your percentage is outside of the acceptable range."
         );
-        (, int96 flowRate, , ) = cfa.getFlowByID(_token, _agreementId);
-        int96 proportionedFlowRate = mulDiv(_percentage, flowRate, ONE_HUNDRED_PERCENT);
+
+        // calculate the previous flow rate from user to the pipe
+        int96 oldUserToPipeFlowRate =
+            userAllocations[_sender].allocations[_pipeAddress].percentage.mul(
+                _oldUserToSuperRouterFlowRate,
+                "Int96 Error: Could not multiply."
+            );
+
+        // update the flow withdraw data in pipe for accounting purposes
+        IPipe(_pipeAddress).setFlowWithdrawData(_sender, oldUserToPipeFlowRate);
+
+        // get the new user to router flow rate
+        (, int96 newUserToRouterFlowRate, , ) = cfa.getFlowByID(_token, _agreementId);
+
+        // get the new user to pipe flow rate using the new percentage and newly set flow rate
+        int96 newUserToPipeFlowRate = mulDiv(_percentage, newUserToRouterFlowRate, ONE_HUNDRED_PERCENT);
+        // TODO: update percentage of userAllocations[user].allocations[pipeAddress].percent
+
+        // get the new total flow rate from SuperRouter to _pipeAddress
+        int96 newRouterToPipeFlowRate =
+            superRouterToPipeFlowRates[_pipeAddress].sub(oldUserToPipeFlowRate, "Int96 Error: Could not subtract.").add(
+                newUserToPipeFlowRate,
+                "Int96 Error: Could not add."
+            );
+        // TODO: update the superRouterToPipeFlowRates in state
+
         (newCtx, ) = host.callAgreementWithContext(
             ISuperAgreement(_agreementClass),
-            abi.encodeWithSelector(cfa.createFlow.selector, _pipeAddress, proportionedFlowRate, _ctx),
+            abi.encodeWithSelector(cfa.updateFlow.selector, _token, _pipeAddress, newRouterToPipeFlowRate, _ctx),
             "0x",
             _ctx
         );
-
-        address sender = host.decodeCtx(_ctx).msgSender;
-        IPipe(_pipeAddress).setFlowWithdrawData(sender, 0);
     }
 
-    function _createFlowToPipes(
+    function _stopFlowToPipe(
+        address _pipeAddress,
+        ISuperToken _token,
+        address _agreementClass,
+        bytes calldata _ctx
+    ) internal returns (bytes memory newCtx) {
+        (newCtx, ) = host.callAgreementWithContext(
+            ISuperAgreement(_agreementClass),
+            abi.encodeWithSelector(cfa.deleteFlow.selector, _token, address(this), _pipeAddress),
+            "0x",
+            _ctx
+        );
+    }
+
+    /** @dev Modify flow to pipes is called in our callback function and either creates (only once) or
+     * updates the flow between the SuperRouter and a Pipe.
+     */
+    function _modifyFlowToPipes(
         ISuperToken _token,
         address _agreementClass,
         bytes32 _agreementId,
@@ -127,18 +250,79 @@ contract SuperRouter is SuperAppBase {
     ) internal returns (bytes memory newCtx) {
         newCtx = _ctx;
         bytes memory rawUserData = host.decodeCtx(newCtx).userData;
+        address sender = host.decodeCtx(newCtx).msgSender;
         PipeFlowData[] memory pipeFlowData = abi.decode(rawUserData, (PipeFlowData[]));
+
+        // get the old flow rate between user and SuperRouter
+        int96 oldTotalUserToSuperRouterFlowRate = userAllocations[sender].totalFlowRate;
+        // get the newly created/updated flow rate between the user and SuperRouter
+        (, int96 newUserToSuperRouterFlowRate, , ) = cfa.getFlowByID(_token, _agreementId);
+        // update the user total flow rate to the newly created/updated one
+        userAllocations[sender].totalFlowRate = newUserToSuperRouterFlowRate;
+
         for (uint256 i; i < pipeFlowData.length; i++) {
-            _createFlowToPipe(
-                pipeFlowData[i].pipeAddress,
-                pipeFlowData[i].percentage,
-                _token,
-                _agreementClass,
-                _agreementId,
-                _ctx
-            );
+            // check if an agreement exists between the SuperRouter and Pipe
+            (uint256 timestamp, , , ) = cfa.getFlow(_token, address(this), pipeFlowData[i].pipeAddress);
+            bool _agreementExists = timestamp > 0;
+
+            // if the user doesn't want to create or update, we skip
+            if (pipeFlowData[i].percentage == 0 && !_agreementExists) {
+                continue;
+            }
+            if (!_agreementExists) {
+                newCtx = _createFlowToPipe(
+                    pipeFlowData[i].pipeAddress,
+                    pipeFlowData[i].percentage,
+                    newUserToSuperRouterFlowRate,
+                    sender,
+                    _agreementClass,
+                    _ctx
+                );
+            } else {
+                // if the total flow rate is unchanged AND the percentage allocated to this pipe remains unchanged
+                // we don't need to update this
+                if (
+                    oldTotalUserToSuperRouterFlowRate == newUserToSuperRouterFlowRate &&
+                    pipeFlowData[i].percentage ==
+                    userAllocations[sender].allocations[pipeFlowData[i].pipeAddress].percentage
+                ) {
+                    continue;
+                }
+                newCtx = _updateFlowToPipe(
+                    pipeFlowData[i].pipeAddress,
+                    pipeFlowData[i].percentage,
+                    sender,
+                    oldTotalUserToSuperRouterFlowRate,
+                    _token,
+                    _agreementClass,
+                    _agreementId,
+                    _ctx
+                );
+            }
         }
     }
+
+    // function _stopFlowToPipes(
+    //     ISuperToken _token,
+    //     address _agreementClass,
+    //     bytes32 _agreementId,
+    //     bytes calldata _ctx
+    // ) internal returns (bytes memory newCtx) {
+    //     newCtx = _ctx;
+    //     bytes memory rawUserData = host.decodeCtx(newCtx).userData;
+    //     address sender = host.decodeCtx(newCtx).msgSender;
+    //     PipeFlowData[] memory pipeFlowData = abi.decode(rawUserData, (PipeFlowData[]));
+    //     for (uint256 i; i < pipeFlowData.length; i++) {
+    //         (uint256 timestamp, , , ) = cfa.getFlow(_token, sender, pipeFlowData[i].pipeAddress);
+    //         bool _agreementExists = timestamp > 0;
+
+    //         // if the agreement doesn't exist, we skip
+    //         if (!_agreementExists) {
+    //             continue;
+    //         }
+    //         // newCtx = update user flow to pipe to 0.
+    //     }
+    // }
 
     /**************************************************************************
      * Super App Callbacks
@@ -153,7 +337,7 @@ contract SuperRouter is SuperAppBase {
     ) external view override onlyHost onlyExpected(_token, _agreementClass) returns (bytes memory cbdata) {}
 
     /**
-     * @dev After the user starts flowing funds into the SuperRouter, we must redirect these flows through the
+     * @dev After the user starts flowing funds into the SuperRouter, we redirect these flows through the
      * various pipes to the vaults accordingly based on the users selection vaults (pipes) in setupFlows.
      */
     function afterAgreementCreated(
@@ -164,7 +348,34 @@ contract SuperRouter is SuperAppBase {
         bytes calldata, // _cbdata
         bytes calldata _ctx
     ) external override onlyHost onlyExpected(_token, _agreementClass) returns (bytes memory newCtx) {
-        newCtx = _createFlowToPipes(_token, _agreementClass, _agreementId, _ctx);
+        newCtx = _modifyFlowToPipes(_token, _agreementClass, _agreementId, _ctx);
+    }
+
+    /** @dev If the user updates their flow rates or the proportion that go into the different flows, then we
+     * will udpate the total flowed from the SuperRouter to the Pipe.
+     */
+    function afterAgreementUpdated(
+        ISuperToken _token,
+        address _agreementClass,
+        bytes32 _agreementId,
+        bytes calldata, // _agreementData
+        bytes calldata, // _cbdata
+        bytes calldata _ctx
+    ) external override onlyHost onlyExpected(_token, _agreementClass) returns (bytes memory newCtx) {
+        newCtx = _modifyFlowToPipes(_token, _agreementClass, _agreementId, _ctx);
+    }
+
+    /** @dev If the user removes their flow rates, we will update the state accordingly.
+     */
+    function afterAgreementTerminated(
+        ISuperToken _token,
+        address _agreementClass,
+        bytes32 _agreementId,
+        bytes calldata, // _agreementData
+        bytes calldata, // _cbdata
+        bytes calldata _ctx
+    ) external override returns (bytes memory newCtx) {
+        // newCtx = _stopFlowToPipes(_token, _agreementClass, _agreementId, _ctx);
     }
 
     /**************************************************************************
@@ -179,6 +390,20 @@ contract SuperRouter is SuperAppBase {
         return
             ISuperAgreement(_agreementClass).agreementType() ==
             keccak256("org.superfluid-finance.agreements.ConstantFlowAgreement.v1");
+    }
+
+    modifier isFullyAllocated(PipeFlowData[] memory _pipeFlowData) {
+        int96 totalPercentage;
+        for (uint256 i; i < _pipeFlowData.length; i++) {
+            totalPercentage = totalPercentage + _pipeFlowData[i].percentage;
+        }
+        require(totalPercentage == ONE_HUNDRED_PERCENT, "Your flows don't add up to 100%.");
+        _;
+    }
+
+    modifier validPipeAddress(address _pipeAddress) {
+        require(validPipeAddresses[_pipeAddress] == true, "This is not a registered vault address.");
+        _;
     }
 
     modifier onlyHost() {
