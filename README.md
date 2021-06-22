@@ -1,117 +1,89 @@
-# Solidity Template
+<br />
+<p align="center">
+  <h3 align="center">Piped Piper</h3>
 
-My favourite setup for writing Solidity smart contracts.
+  <p align="center">
+    Our ETHGlobal Hack Money Hackathon project which utilizes Superfluid to create a `SuperValve` and `Pipe` contracts which enables users to flow money through the SuperValve and allocate their flow amongst multiple existing yield generating vaults. The Pipe allows the flows to be aggregated and to interface with existing DeFi applications.
+  </p>
+</p>
 
--   [Hardhat](https://github.com/nomiclabs/hardhat): compile and run the smart contracts on a local development network
--   [TypeChain](https://github.com/ethereum-ts/TypeChain): generate TypeScript types for smart contracts
--   [Ethers](https://github.com/ethers-io/ethers.js/): renowned Ethereum library and wallet implementation
--   [Waffle](https://github.com/EthWorks/Waffle): tooling for writing comprehensive smart contract tests
--   [Solhint](https://github.com/protofire/solhint): linter
--   [Solcover](https://github.com/sc-forks/solidity-coverage): code coverage
--   [Prettier Plugin Solidity](https://github.com/prettier-solidity/prettier-plugin-solidity): code formatter
+<!-- TABLE OF CONTENTS -->
+<details open="open">
+  <summary><h2 style="display: inline-block">Table of Contents</h2></summary>
+  <ol>
+    <li>
+      <a href="#about-the-project">About The Project</a>
+      <ul>
+        <li><a href="#built-with">Built With</a></li>
+      </ul>
+    </li>
+    <li>
+      <a href="#getting-started">Getting Started</a>
+      <ul>
+        <li><a href="#installation">Installation</a></li>
+      </ul>
+    </li>
+    <li><a href="#usage">Usage</a></li>
+    <li><a href="#license">License</a></li>
+    <li><a href="#contact">Contact</a></li>
+  </ol>
+</details>
 
-This is a GitHub template, which means you can reuse it as many times as you want. You can do that by clicking the "Use this
-template" button at the top of the page.
+<!-- ABOUT THE PROJECT -->
+
+## About The Project
+
+### Built With
+
+-   [Superfluid](https://www.superfluid.finance/home)
+-   [Solidity](https://soliditylang.org/)
+-   [Hardhat](https://hardhat.org/)
+-   [TypeScript](https://typescriptlang.org/)
+
+<!-- GETTING STARTED -->
+
+## Getting Started
+
+To get a local copy up and running follow these simple steps.
+
+### Installation
+
+1. Clone the repo
+    ```sh
+    git clone https://github.com/0xdavinchee/piped-piper.git
+    ```
+2. Install NPM packages
+    ```sh
+    yarn install
+    ```
+3. Create a `.env` file and add the two following values:
+
+-   `MNEMONIC`: A mnemonic for accounts.
+-   `HOST_ADDRESS`: The address of the Superfluid host contract on the network you plan on deploying to.
+-   `CFA_ADDRESS`: The address of the Superfluid Constant Flow Agreement V1 contract on the network you plan on deploying to.
+-   `TOKEN_ADDRESS`: The address of the SuperToken on the network you plan on deploying to.
+-   `INFURA_API_KEY`: You can get this from https://infura.io by signing up for a free account.
+
+<!-- USAGE EXAMPLES -->
 
 ## Usage
 
-### Pre Requisites
+To compile: `npx hardhat compile`.
 
-Before running any command, make sure to install dependencies:
+To run tests: `npx hardhat test`.
 
-```sh
-$ yarn install
-```
+Run `npx hardhat node` to start up a local node.
 
-### Compile
+Open up another terminal window and run `npx hardhat deploy --network localhost` to deploy your project to localhost. You can similarly deploy to other networks like so: `npx hardhat deploy --network <NETWORK>`
 
-Compile the smart contracts with Hardhat:
+<!-- LICENSE -->
 
-```sh
-$ yarn compile
-```
+## License
 
-### TypeChain
+Distributed under the MIT License. See `LICENSE` for more information.
 
-Compile the smart contracts and generate TypeChain artifacts:
+<!-- CONTACT -->
 
-```sh
-$ yarn typechain
-```
+## Contact
 
-### Lint Solidity
-
-Lint the Solidity code:
-
-```sh
-$ yarn lint:sol
-```
-
-### Lint TypeScript
-
-Lint the TypeScript code:
-
-```sh
-$ yarn lint:ts
-```
-
-### Test
-
-Run the Mocha tests:
-
-```sh
-$ yarn test
-```
-
-### Coverage
-
-Generate the code coverage report:
-
-```sh
-$ yarn coverage
-```
-
-### Report Gas
-
-See the gas usage per unit test and average gas per method call:
-
-```sh
-$ REPORT_GAS=true yarn test
-```
-
-### Clean
-
-Delete the smart contract artifacts, the coverage reports and the Hardhat cache:
-
-```sh
-$ yarn clean
-```
-
-### Deploy
-
-Deploy the contracts to Hardhat Network:
-
-```sh
-$ yarn deploy
-```
-
-Deploy the contracts to a specific network, such as the Ropsten testnet:
-
-```sh
-$ yarn deploy:network ropsten
-```
-
-## Syntax Highlighting
-
-If you use VSCode, you can enjoy syntax highlighting for your Solidity code via the
-[vscode-solidity](https://github.com/juanfranblanco/vscode-solidity) extension. The recommended approach to set the
-compiler version is to add the following fields to your VSCode user settings:
-
-```json
-{
-    "solidity.compileUsingRemoteVersion": "v0.8.4+commit.c7e474f2",
-    "solidity.defaultCompiler": "remote"
-}
-```
-
-Where of course `v0.8.4+commit.c7e474f2` can be replaced with any other version.
+Project Link: [https://github.com/0xdavinchee/piped-piper](https://github.com/0xdavinchee/piped-piper)
