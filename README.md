@@ -1,10 +1,8 @@
 <br />
 <p align="center">
-  <h3 align="center">Piped Piper - ETHGlobal Hack Money Hackathon</h3>
 
-  <p align="center">
-    Our project utilizes Superfluid to create a SuperValve and Pipe contracts which enables users to flow money through the SuperValve and allocate their flow amongst multiple existing yield generating vaults. The Pipe allows the flows to be aggregated and to interface with existing DeFi applications.
-  </p>
+  <img src="images/pipe.png" alt="Logo" width="100" height="100">
+  <h3 align="center">Piped Piper - ETHGlobal Hack Money Hackathon</h3>
 </p>
 
 <!-- TABLE OF CONTENTS -->
@@ -32,6 +30,8 @@
 <!-- ABOUT THE PROJECT -->
 
 ## About The Project
+
+Our project utilizes Superfluid to create a SuperValve and Pipe contracts which enables users to flow money through the SuperValve and allocate their flow amongst multiple existing yield generating vaults. The Pipe allows the flows to be aggregated and to interface with existing DeFi applications.
 
 ### Built With
 
