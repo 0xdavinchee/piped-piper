@@ -16,8 +16,11 @@ import {
 import { Vault } from "./Vault.sol";
 
 /// @author Piped-Piper ETHGlobal Hack Money Team
-/// @title Pipe takes a stream and periodically sends these funds into an existing yield generating farm or
-/// any other type of contract.
+/// @title Pipe takes a single flow and periodically sends these funds into an existing yield generating farm or
+/// any other type of contract. You can use this contract by inheriting it and overriding the functions in the
+/// abstract contract to implement the deposit, withdraw and balanceOf functions of the respective vaults.
+/// Input: A flow of SuperTokens from a single address.
+/// Output: The underlying token to a single address.
 /// Caveat: Certain variables are set to public for testing purposes.
 contract Pipe is Vault {
     struct UserWithdrawData {
@@ -26,10 +29,10 @@ contract Pipe is Vault {
         int256 flowAmountSinceUpdate;
         int256 totalFlowedToPipe;
     }
-    struct ValveToPipeData {
-        uint256 lastValveToPipeFlowUpdate;
-        int256 totalValveToPipeFlow;
-        int96 valveToPipeFlowRate;
+    struct InflowToPipeData {
+        uint256 lastInflowToPipeFlowUpdate;
+        int256 totalInflowToPipeFlow;
+        int96 inflowToPipeFlowRate;
     }
 
     using SafeMath for uint256;
@@ -45,7 +48,7 @@ contract Pipe is Vault {
     mapping(address => UserWithdrawData) public userWithdrawData; // private
     address public allowedVaultDepositorAddress; // private
     uint256 public lastVaultDepositTimestamp; // private
-    ValveToPipeData public valveToPipeData; // private
+    InflowToPipeData public inflowToPipeData; // private
 
     event DepositFundsToVault(uint256 amount, uint256 timestamp);
     event WithdrawFromSuperApp(address indexed withdrawer, uint256 amount);
@@ -98,9 +101,9 @@ contract Pipe is Vault {
     }
 
     /**
-     * @dev Updates the timestamp of the total amount the user has flowed into this pipe,
-     * when the user flow was last updated as well as the amount of flow since the user
-     * last updated their flow rate.
+     * @dev Updates the timestamp of the total amount the user has flowed into the Pipe,
+     * when the user flow amount last updated as well as the amount of flow since the user
+     * last updated their flow agreement.
      */
     function setUserFlowWithdrawData(address _depositor, int96 _previousFlowRate) external {
         userWithdrawData[_depositor].totalFlowedToPipe = userWithdrawData[_depositor].totalFlowedToPipe.add(
@@ -113,17 +116,17 @@ contract Pipe is Vault {
     }
 
     /**
-     * @dev Updates the timestamp of the total amount the valve has flowed into this pipe,
-     * when the valve flow was last updated.
+     * @dev Updates the timestamp of the total amount that has flowed into the Pipe and
+     * when the flow agreement was last updated.
      */
     function setPipeFlowData(int96 _newFlowRate) external {
-        valveToPipeData.totalValveToPipeFlow = valveToPipeData.totalValveToPipeFlow.add(
-            block.timestamp.toInt256().sub(valveToPipeData.lastValveToPipeFlowUpdate.toInt256()).mul(
-                valveToPipeData.valveToPipeFlowRate
+        inflowToPipeData.totalInflowToPipeFlow = inflowToPipeData.totalInflowToPipeFlow.add(
+            block.timestamp.toInt256().sub(inflowToPipeData.lastInflowToPipeFlowUpdate.toInt256()).mul(
+                inflowToPipeData.inflowToPipeFlowRate
             )
         );
-        valveToPipeData.valveToPipeFlowRate = _newFlowRate;
-        valveToPipeData.lastValveToPipeFlowUpdate = block.timestamp;
+        inflowToPipeData.inflowToPipeFlowRate = _newFlowRate;
+        inflowToPipeData.lastInflowToPipeFlowUpdate = block.timestamp;
     }
 
     /**************************************************************************
@@ -220,7 +223,7 @@ contract Pipe is Vault {
     function vaultRewardBalanceOf(address _withdrawer, uint256 _vaultBalance) internal view returns (uint256) {
         int256 userTotalFlowedToPipe = userWithdrawData[_withdrawer].totalFlowedToPipe;
         uint256 totalVaultWithdrawableAmount =
-            userTotalFlowedToPipe.div(valveToPipeData.totalValveToPipeFlow).toUint256().mul(_vaultBalance);
+            userTotalFlowedToPipe.div(inflowToPipeData.totalInflowToPipeFlow).toUint256().mul(_vaultBalance);
 
         return
             totalVaultWithdrawableAmount > userWithdrawData[_withdrawer].vaultWithdrawnAmount

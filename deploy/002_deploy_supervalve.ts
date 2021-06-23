@@ -7,17 +7,12 @@ const func: DeployFunction = async (hre: HardhatRuntimeEnvironment) => {
     const { deploy } = deployments;
 
     // TODO: THIS VAULT ADDRESS IS INCORRECT
-    await deploy("Pipe", {
+    await deploy("SuperValve", {
         from: deployer,
-        args: [
-            process.env.HOST_ADDRESS,
-            process.env.CFA_ADDRESS,
-            process.env.SUPER_TOKEN_ADDRESS,
-            process.env.VAULT_ADDRESS,
-        ],
+        args: [process.env.HOST_ADDRESS, process.env.CFA_ADDRESS, process.env.SUPER_TOKEN_ADDRESS, []],
         log: true,
     });
 };
 
 export default func;
-func.tags = ["Pipe"];
+func.tags = ["SuperValve"];
