@@ -15,6 +15,10 @@ import {
 } from "@superfluid-finance/ethereum-contracts/contracts/interfaces/superfluid/ISuperfluid.sol";
 import { Vault } from "./Vault.sol";
 
+/// @author Piped-Piper ETHGlobal Hack Money Team
+/// @title Pipe takes a stream and periodically sends these funds into an existing yield generating farm or
+/// any other type of contract.
+/// Caveat: Certain variables are set to public for testing purposes.
 contract Pipe is Vault {
     struct UserWithdrawData {
         uint256 vaultWithdrawnAmount;
@@ -35,13 +39,13 @@ contract Pipe is Vault {
     using Int96SafeMath for int96;
 
     ISuperfluid private host;
-    IConstantFlowAgreementV1 private cfa;
-    ISuperToken private acceptedToken;
+    IConstantFlowAgreementV1 public cfa; // private
+    ISuperToken public acceptedToken; // private
 
-    mapping(address => UserWithdrawData) private userWithdrawData;
-    address private allowedVaultDepositorAddress;
-    uint256 private lastVaultDepositTimestamp;
-    ValveToPipeData private valveToPipeData;
+    mapping(address => UserWithdrawData) public userWithdrawData; // private
+    address public allowedVaultDepositorAddress; // private
+    uint256 public lastVaultDepositTimestamp; // private
+    ValveToPipeData public valveToPipeData; // private
 
     event DepositFundsToVault(uint256 amount, uint256 timestamp);
     event WithdrawFromSuperApp(address indexed withdrawer, uint256 amount);

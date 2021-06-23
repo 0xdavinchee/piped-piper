@@ -18,7 +18,10 @@ import { Int96SafeMath } from "@superfluid-finance/ethereum-contracts/contracts/
 
 /// @author Piped-Piper ETHGlobal Hack Money Team
 /// @title Handles flow agreement creation with multiple users, aggregates this flow and redirects
-/// it to vaults based on the users' selected allocations.
+/// it to different contracts based on the users' selected allocations.
+/// Caveats: There is a limit to the number of pipes/vaults a router can connect to due to the 3 million
+/// gas limit on a callback.
+/// Certain variables are set to public for testing purposes.
 contract SuperValve is SuperAppBase {
     int96 private constant ONE_HUNDRED_PERCENT = 1000;
 
@@ -39,12 +42,12 @@ contract SuperValve is SuperAppBase {
     }
 
     ISuperfluid private host;
-    IConstantFlowAgreementV1 private cfa;
-    ISuperToken private acceptedToken;
+    IConstantFlowAgreementV1 public cfa; // private
+    ISuperToken public acceptedToken; // private
 
-    mapping(address => bool) private validPipeAddresses;
-    mapping(address => int96) private superValveToPipeFlowRates;
-    mapping(address => UserAllocation) private userAllocations;
+    mapping(address => bool) public validPipeAddresses; // private
+    mapping(address => int96) public superValveToPipeFlowRates; // private
+    mapping(address => UserAllocation) private userAllocations; // private
 
     constructor(
         ISuperfluid _host,
