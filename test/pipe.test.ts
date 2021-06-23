@@ -1,5 +1,5 @@
 import { expect } from "./chai-setup";
-import { ISuperfluid, ISuperToken, Pipe, PipeTester as PipeTesterType } from "../typechain";
+import { ISuperfluid, ISuperToken, Pipe } from "../typechain";
 import hre, { ethers, deployments, getNamedAccounts, getUnnamedAccounts } from "hardhat";
 import ISuperfluidArtifact from "../artifacts/@superfluid-finance/ethereum-contracts/contracts/interfaces/superfluid/ISuperfluid.sol/ISuperfluid.json";
 import ISuperTokenArtifact from "../artifacts/@superfluid-finance/ethereum-contracts/contracts/interfaces/superfluid/ISuperToken.sol/ISuperToken.json";
@@ -36,7 +36,6 @@ const setup = async () => {
         )) as ISuperToken,
         Host: (await ethers.getContractAt(ISuperfluidArtifact.abi, process.env.HOST_ADDRESS || "")) as ISuperfluid,
         Pipe: (await ethers.getContract("Pipe")) as Pipe,
-        PipeTester: (await ethers.getContract("PipeTester")) as PipeTesterType,
     };
     const { deployer } = await getNamedAccounts();
     const users = await getUnnamedAccounts();
@@ -63,10 +62,7 @@ describe("Pipe", () => {
     });
 
     // it("Should properly handle creation of a new flow amounts", async () => {
-    //     const flowRate = monthlyRateToSeconds(100);
-    //     const { fundedUser, fUSDCx, Pipe, PipeTester } = await setup();
-    //     await expect(
-    //         fundedUser.PipeTester._createUserToPipeFlow(Pipe.address, flowRate, fUSDCx.address, CFAAddress),
-    //     ).to.emit(PipeTester, "ModifyFlowAgreement");
+    //     const flowRate = monthlyRateToSeconds(10);
+    //     const { fundedUser, fUSDCx, Pipe } = await setup();
     // });
 });
