@@ -25,33 +25,35 @@ import { Int96SafeMath } from "@superfluid-finance/ethereum-contracts/contracts/
 contract PipeTester {
     ISuperfluid private host;
     IConstantFlowAgreementV1 public cfa; // private
-    ISuperToken public acceptedToken; // private
 
-    constructor(
-        ISuperfluid _host,
-        IConstantFlowAgreementV1 _cfa,
-        ISuperToken _acceptedToken
-    ) {
+    constructor(ISuperfluid _host, IConstantFlowAgreementV1 _cfa) {
         require(address(_host) != address(0), "Host is zero address.");
         require(address(_cfa) != address(0), "CFA is zero address.");
-        require(address(_acceptedToken) != address(0), "Token is zero address.");
         host = _host;
         cfa = _cfa;
-        acceptedToken = _acceptedToken;
     }
+
+    event ModifyFlowAgreement(
+        address pipeAddress,
+        int96 oldFlowRate,
+        int96 newFlowRate,
+        address sender,
+        address agreementClass
+    );
+    event Withdraw(address pipeAddress, int96 flowRate);
 
     /** @dev Withdraws your funds from a single vault/pipe.
      */
-    function withdrawFromVault(address _pipeAddress) public {
+    function withdrawFromVault(address _pipeAddress, ISuperToken _token) public {
         IPipe pipe = IPipe(_pipeAddress);
-        (, int96 flowRate, , ) = cfa.getFlow(acceptedToken, address(this), _pipeAddress);
-
-        // update the valveToPipeData in IPipe (same flow rate, but need to calculate total flow
-        // before withdrawal)
-        pipe.setPipeFlowData(flowRate);
+        (, int96 flowRate, , ) = cfa.getFlow(_token, address(this), _pipeAddress);
 
         if (pipe.totalWithdrawableBalance(msg.sender, flowRate) > 0) {
+            // update the valveToPipeData in IPipe (same flow rate, but need to calculate total flow
+            // before withdrawal)
+            pipe.setPipeFlowData(flowRate);
             pipe.withdraw(flowRate);
+            emit Withdraw(_pipeAddress, flowRate);
         }
     }
 
@@ -61,20 +63,21 @@ contract PipeTester {
     function _createUserToPipeFlow(
         address _pipeAddress,
         int96 _newUserToPipeFlowRate,
-        address _sender,
+        ISuperToken _token,
         address _agreementClass
     ) external {
         // update the user flow withdraw data in Pipe for accounting purposes
-        IPipe(_pipeAddress).setUserFlowWithdrawData(_sender, 0);
+        IPipe(_pipeAddress).setUserFlowWithdrawData(msg.sender, 0);
         // update the valveToPipeData in IPipe
         IPipe(_pipeAddress).setPipeFlowData(_newUserToPipeFlowRate);
 
         // create the flow agreement between the SuperValve and Pipe
         host.callAgreement(
             ISuperAgreement(_agreementClass),
-            abi.encodeWithSelector(cfa.createFlow.selector, _pipeAddress, _newUserToPipeFlowRate, new bytes(0)),
+            abi.encodeWithSelector(cfa.createFlow.selector, _token, _pipeAddress, _newUserToPipeFlowRate, new bytes(0)),
             "0x"
         );
+        emit ModifyFlowAgreement(_pipeAddress, 0, _newUserToPipeFlowRate, msg.sender, _agreementClass);
     }
 
     /** @dev Updates the valveToPipe flowRate when a user updates their flow rate.
@@ -84,7 +87,6 @@ contract PipeTester {
     function _updateUserToPipeFlow(
         address _pipeAddress,
         int96 _newUserToPipeFlowRate,
-        address _sender,
         ISuperToken _token,
         address _agreementClass
     ) external {
@@ -94,7 +96,7 @@ contract PipeTester {
         (, int96 oldUserToPipeFlowRate, , ) = cfa.getFlow(_token, msg.sender, _pipeAddress);
 
         // update the user flow withdraw data in Pipe for accounting purposes
-        IPipe(pipeAddress).setUserFlowWithdrawData(_sender, oldUserToPipeFlowRate);
+        IPipe(pipeAddress).setUserFlowWithdrawData(msg.sender, oldUserToPipeFlowRate);
 
         // update the valveToPipeData in IPipe
         IPipe(_pipeAddress).setPipeFlowData(_newUserToPipeFlowRate);
@@ -102,8 +104,15 @@ contract PipeTester {
         // update the flow agreement between SuperValve and Pipe
         host.callAgreement(
             ISuperAgreement(_agreementClass),
-            abi.encodeWithSelector(cfa.updateFlow.selector, _token, pipeAddress, _newUserToPipeFlowRate),
+            abi.encodeWithSelector(cfa.updateFlow.selector, _token, pipeAddress, _newUserToPipeFlowRate, new bytes(0)),
             "0x"
+        );
+        emit ModifyFlowAgreement(
+            _pipeAddress,
+            oldUserToPipeFlowRate,
+            _newUserToPipeFlowRate,
+            msg.sender,
+            _agreementClass
         );
     }
 
@@ -114,26 +123,30 @@ contract PipeTester {
     function _stopFlowToPipe(
         address _pipeAddress,
         int96 _newUserToPipeFlowRate, // this will always be 0
-        address _sender,
         ISuperToken _token,
-        address _agreementClass,
-        bytes calldata _ctx
-    ) internal returns (bytes memory newCtx) {
+        address _agreementClass
+    ) internal {
         // get the old userToPipe flow rate
         (, int96 oldUserToPipeFlowRate, , ) = cfa.getFlow(_token, msg.sender, _pipeAddress);
 
         // update the user flow withdraw data in pipe for accounting purposes
-        IPipe(_pipeAddress).setUserFlowWithdrawData(_sender, oldUserToPipeFlowRate);
+        IPipe(_pipeAddress).setUserFlowWithdrawData(msg.sender, oldUserToPipeFlowRate);
 
         // update the valveToPipeData in IPipe
         IPipe(_pipeAddress).setPipeFlowData(_newUserToPipeFlowRate);
 
         // update the flow agreement between SuperValve and Pipe
-        (newCtx, ) = host.callAgreementWithContext(
+        host.callAgreement(
             ISuperAgreement(_agreementClass),
-            abi.encodeWithSelector(cfa.updateFlow.selector, _token, _pipeAddress, _newUserToPipeFlowRate, _ctx),
-            "0x",
-            _ctx
+            abi.encodeWithSelector(cfa.updateFlow.selector, _token, _pipeAddress, _newUserToPipeFlowRate, new bytes(0)),
+            "0x"
+        );
+        emit ModifyFlowAgreement(
+            _pipeAddress,
+            oldUserToPipeFlowRate,
+            _newUserToPipeFlowRate,
+            msg.sender,
+            _agreementClass
         );
     }
 }

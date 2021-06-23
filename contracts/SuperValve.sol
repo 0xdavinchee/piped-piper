@@ -93,12 +93,12 @@ contract SuperValve is SuperAppBase {
         IPipe pipe = IPipe(_pipeAddress);
         (, int96 flowRate, , ) = cfa.getFlow(acceptedToken, address(this), _pipeAddress);
 
-        // update the valveToPipeData in IPipe (same flow rate, but need to calculate total flow
-        // before withdrawal)
-        pipe.setPipeFlowData(flowRate);
-
         int96 previousFlowRate = userAllocations[msg.sender].allocations[_pipeAddress].flowRate;
         if (pipe.totalWithdrawableBalance(msg.sender, previousFlowRate) > 0) {
+            // update the valveToPipeData in IPipe (same flow rate, but need to calculate total flow
+            // before withdrawal)
+            pipe.setPipeFlowData(flowRate);
+
             pipe.withdraw(previousFlowRate);
         }
     }
