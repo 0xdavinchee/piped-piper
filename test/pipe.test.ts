@@ -27,7 +27,7 @@ const monthlyRateToSeconds = (monthlyRate: number) => {
 };
 
 const setup = async () => {
-    await deployments.fixture(["Pipe", "PipeTester"]);
+    await deployments.fixture(["Pipe"]);
     const contracts = {
         fUSDC: (await ethers.getContractAt(ISuperTokenArtifact.abi, process.env.TOKEN_ADDRESS || "")) as ISuperToken,
         fUSDCx: (await ethers.getContractAt(
