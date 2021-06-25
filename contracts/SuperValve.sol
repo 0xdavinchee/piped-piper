@@ -90,7 +90,6 @@ contract SuperValve is SuperAppBase, AccessControl {
      * Helper Functions
      *************************************************************************/
 
-    // TODO: ensure the user is able to stop their flows then withdraw.
     /**
      * @dev Withdraws all your funds from all the different vaults/pipes.
      */

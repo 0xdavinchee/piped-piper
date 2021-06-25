@@ -78,7 +78,7 @@ const config: HardhatUserConfig = {
         mumbai: createTestnetConfig("polygon-mumbai"),
     },
     paths: {
-        artifacts: "./artifacts",
+        artifacts: "./frontend/src/artifacts",
         cache: "./cache",
         sources: "./contracts",
         tests: "./test",
