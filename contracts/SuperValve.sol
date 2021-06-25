@@ -59,7 +59,7 @@ contract SuperValve is SuperAppBase, AccessControl {
 
     mapping(address => bool) public validPipeAddresses; // private
     mapping(address => int96) public superValveToPipeFlowRates; // private
-    mapping(address => UserAllocation) private userAllocations; // private
+    mapping(address => UserAllocation) public userAllocations; // private
     PipeFlowData[][] public userPipeFlowData;
 
     constructor(

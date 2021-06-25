@@ -16,7 +16,6 @@ import { setupUser, setupUsers } from "./utils";
 // TODO: Create a fake vault contract that just stores coins
 
 const testAddress = process.env.TEST_ADDRESS || "";
-const CFAAddress = process.env.CFA_ADDRESS || "";
 
 const monthlyRateToSeconds = (monthlyRate: number) => {
     const days = 30;

@@ -6,18 +6,12 @@ const func: DeployFunction = async (hre: HardhatRuntimeEnvironment) => {
     const { deployer } = await getNamedAccounts();
     const { deploy } = deployments;
 
-    // TODO: THIS VAULT ADDRESS IS INCORRECT
-    await deploy("Pipe", {
+    await deploy("FakeVault", {
         from: deployer,
-        args: [
-            process.env.HOST_ADDRESS,
-            process.env.CFA_ADDRESS,
-            process.env.SUPER_TOKEN_ADDRESS,
-            process.env.VAULT_ADDRESS,
-        ],
+        args: ["0x0f1d7c55a2b133e000ea10eec03c774e0d6796e8", "fUSDC Vault 1 TOKEN", "vFUSDC1"],
         log: true,
     });
 };
 
 export default func;
-func.tags = ["Pipe"];
+func.tags = ["FakeVault"];
