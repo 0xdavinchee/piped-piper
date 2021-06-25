@@ -14,6 +14,7 @@ import {
 import { SuperAppBase } from "@superfluid-finance/ethereum-contracts/contracts/apps/SuperAppBase.sol";
 import { IPipe } from "./interfaces/IPipe.sol";
 import { SignedSafeMath } from "@openzeppelin/contracts/math/SignedSafeMath.sol";
+import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
 import { Int96SafeMath } from "@superfluid-finance/ethereum-contracts/contracts/utils/Int96SafeMath.sol";
 
 /// @author Piped-Piper ETHGlobal Hack Money Team
@@ -22,8 +23,9 @@ import { Int96SafeMath } from "@superfluid-finance/ethereum-contracts/contracts/
 /// Caveats: There is a limit to the number of pipes/vaults a router can connect to due to the 3 million
 /// gas limit on a callback.
 /// Certain variables are set to public for testing purposes.
-contract SuperValve is SuperAppBase {
+contract SuperValve is SuperAppBase, AccessControl {
     int96 private constant ONE_HUNDRED_PERCENT = 1000;
+    bytes32 private constant ADMIN = keccak256("ADMIN");
 
     using SignedSafeMath for int256;
     using Int96SafeMath for int96;
@@ -60,6 +62,8 @@ contract SuperValve is SuperAppBase {
         require(address(_host) != address(0), "Host is zero address.");
         require(address(_cfa) != address(0), "CFA is zero address.");
         require(address(_acceptedToken) != address(0), "Token is zero address.");
+        _setupRole(ADMIN, msg.sender);
+        _setRoleAdmin(ADMIN, ADMIN);
         host = _host;
         cfa = _cfa;
         acceptedToken = _acceptedToken;
@@ -124,6 +128,12 @@ contract SuperValve is SuperAppBase {
         pipeFlowData = userPipeFlowData[userPipeFlowId];
     }
 
+    /** @dev Allow the admin role (the deployer of the contract), to add or remove valid pipe addresses. */
+    function addOrRemovePipeAddress(address _address, bool _isValid) external onlyRole(ADMIN) {
+        validPipeAddresses[_address] = _isValid;
+    }
+
+    /** @dev Checks before create/update of an agreement. */
     function _beforeFlowToPipe(
         ISuperToken _token,
         bytes32 _agreementId,
@@ -137,6 +147,7 @@ contract SuperValve is SuperAppBase {
         return new bytes(0);
     }
 
+    /** @dev Checks before termination of an agreement. */
     function _beforeStopFlowToPipe(bytes calldata _ctx) private view returns (bytes memory cbdata) {
         (address sender, PipeFlowData[] memory pipeFlowData) = getSenderAndPipeFlowData(_ctx);
         require(pipeFlowData.length > 0, "SuperValve: You have not set your allocations yet.");
