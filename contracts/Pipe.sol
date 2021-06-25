@@ -138,9 +138,6 @@ contract Pipe is Vault {
         uint256 amount = pipeAvailableBalance.toUint256();
         superToken.downgrade(amount);
 
-        address underlyingToken = superToken.getUnderlyingToken();
-        ISuperToken(underlyingToken).increaseAllowance(vault, amount);
-
         // deposit into the vault
         _depositToVault(amount);
 

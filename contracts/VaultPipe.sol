@@ -3,6 +3,7 @@ pragma solidity >=0.7.1;
 
 import { Pipe } from "./Pipe.sol";
 import { IFakeVault } from "./interfaces/IFakeVault.sol";
+import { ISuperToken } from "@superfluid-finance/ethereum-contracts/contracts/interfaces/superfluid/ISuperfluid.sol";
 
 /// @title VaultPipe is solely for testing purposes, when we demo we will want
 /// to import Aave's interface in here or something.

@@ -5,6 +5,59 @@ __metadata:
   version: 4
   cacheKey: 7
 
+"@0xdavinchee/piped-piper@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "@0xdavinchee/piped-piper@workspace:."
+  dependencies:
+    "@codechecks/client": ^0.1.10
+    "@ethersproject/abi": ^5.2.0
+    "@ethersproject/abstract-signer": ^5.2.0
+    "@ethersproject/bignumber": ^5.2.0
+    "@ethersproject/bytes": ^5.2.0
+    "@ethersproject/contracts": ^5.2.0
+    "@ethersproject/providers": ^5.2.0
+    "@nomiclabs/hardhat-ethers": ^2.0.2
+    "@nomiclabs/hardhat-waffle": ^2.0.1
+    "@openzeppelin/contracts": 3.4.1-solc-0.7
+    "@superfluid-finance/ethereum-contracts": ^1.0.0-rc.4
+    "@typechain/ethers-v5": ^7.0.0
+    "@typechain/hardhat": ^2.0.1
+    "@types/chai": ^4.2.18
+    "@types/fs-extra": ^9.0.11
+    "@types/mocha": ^8.2.2
+    "@types/node": ^15.6.1
+    "@typescript-eslint/eslint-plugin": ^4.25.0
+    "@typescript-eslint/parser": ^4.25.0
+    chai: ^4.3.4
+    chai-ethers: ^0.0.1
+    commitizen: ^4.2.4
+    cz-conventional-changelog: ^3.3.0
+    dotenv: ^10.0.0
+    eslint: ^7.27.0
+    eslint-config-prettier: ^8.3.0
+    ethereum-waffle: ^3.3.0
+    ethers: ^5.2.0
+    fs-extra: ^10.0.0
+    hardhat: ^2.3.3
+    hardhat-deploy: ^0.8.8
+    hardhat-deploy-ethers: ^0.3.0-beta.10
+    hardhat-gas-reporter: ^1.0.4
+    husky: ^6.0.0
+    lint-staged: ^11.0.0
+    mocha: ^8.4.0
+    prettier: ^2.3.0
+    prettier-plugin-solidity: ^1.0.0-beta.11
+    shelljs: ^0.8.4
+    solhint: ^3.3.6
+    solhint-plugin-prettier: ^0.0.5
+    solidity-coverage: ^0.7.16
+    ts-generator: ^0.1.1
+    ts-node: ^10.0.0
+    typechain: ^5.0.0
+    typescript: ~4.2.4
+  languageName: unknown
+  linkType: soft
+
 "@babel/code-frame@npm:7.12.11":
   version: 7.12.11
   resolution: "@babel/code-frame@npm:7.12.11"
@@ -1539,60 +1592,6 @@ __metadata:
   checksum: 698b199a3187c6b8455631a470fa4eca45b80da98f2cfb09e84f78089018d93d2ee9967aa39ad2f07faa64ef975f222b144c62d2e6f3857d418bfe20db29d51e
   languageName: node
   linkType: hard
-
-"@paulrberg/solidity-template@workspace:.":
-  version: 0.0.0-use.local
-  resolution: "@paulrberg/solidity-template@workspace:."
-  dependencies:
-    "@codechecks/client": ^0.1.10
-    "@ethersproject/abi": ^5.2.0
-    "@ethersproject/abstract-signer": ^5.2.0
-    "@ethersproject/bignumber": ^5.2.0
-    "@ethersproject/bytes": ^5.2.0
-    "@ethersproject/contracts": ^5.2.0
-    "@ethersproject/providers": ^5.2.0
-    "@nomiclabs/hardhat-ethers": ^2.0.2
-    "@nomiclabs/hardhat-waffle": ^2.0.1
-    "@openzeppelin/contracts": 3.4.1-solc-0.7
-    "@superfluid-finance/ethereum-contracts": ^1.0.0-rc.4
-    "@typechain/ethers-v5": ^7.0.0
-    "@typechain/hardhat": ^2.0.1
-    "@types/chai": ^4.2.18
-    "@types/fs-extra": ^9.0.11
-    "@types/mocha": ^8.2.2
-    "@types/node": ^15.6.1
-    "@typescript-eslint/eslint-plugin": ^4.25.0
-    "@typescript-eslint/parser": ^4.25.0
-    chai: ^4.3.4
-    chai-ethers: ^0.0.1
-    commitizen: ^4.2.4
-    cz-conventional-changelog: ^3.3.0
-    dotenv: ^10.0.0
-    eslint: ^7.27.0
-    eslint-config-prettier: ^8.3.0
-    ethereum-waffle: ^3.3.0
-    ethers: ^5.2.0
-    fs-extra: ^10.0.0
-    hardhat: ^2.3.3
-    hardhat-deploy: ^0.8.8
-    hardhat-deploy-ethers: ^0.3.0-beta.10
-    hardhat-gas-reporter: ^1.0.4
-    hardhat-prettier: ^0.0.1
-    husky: ^6.0.0
-    lint-staged: ^11.0.0
-    mocha: ^8.4.0
-    prettier: ^2.3.0
-    prettier-plugin-solidity: ^1.0.0-beta.11
-    shelljs: ^0.8.4
-    solhint: ^3.3.6
-    solhint-plugin-prettier: ^0.0.5
-    solidity-coverage: ^0.7.16
-    ts-generator: ^0.1.1
-    ts-node: ^10.0.0
-    typechain: ^5.0.0
-    typescript: ~4.2.4
-  languageName: unknown
-  linkType: soft
 
 "@resolver-engine/core@npm:^0.3.3":
   version: 0.3.3
@@ -7998,20 +7997,6 @@ fsevents@~2.3.1:
   peerDependencies:
     hardhat: ^2.0.2
   checksum: 0273e454b260a9447b35d2f93910d916ca64b30ffc32d200d5830ea9b2c6afb52ac8844ba5ee598fd14abacd2ee5871eee04a579f95050e155dafa768d94886e
-  languageName: node
-  linkType: hard
-
-"hardhat-prettier@npm:^0.0.1":
-  version: 0.0.1
-  resolution: "hardhat-prettier@npm:0.0.1"
-  dependencies:
-    chalk: ^4.1.0
-    glob: ^7.1.6
-  peerDependencies:
-    hardhat: ^2.0.0
-    prettier: ^2.1.0
-    prettier-plugin-solidity: 1.0.0-beta.1
-  checksum: 21f71f78c511868e1da6959c005cb2a886be3fe5f6c20ea625c5e1b280b0253bf904dba326891131bea0e753311fb40ba4223ee9ddc50da46a98811871e7b3b0
   languageName: node
   linkType: hard
 

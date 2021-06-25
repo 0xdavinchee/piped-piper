@@ -32,7 +32,7 @@ contract FakeVault is ERC20 {
     function depositTokens(uint256 _amount) public {
         bool success = acceptedToken.transfer(address(this), _amount);
         require(success, "FakeVault: Deposit transfer failed.");
-        IERC20(address(this))._mint(msg.sender, _amount);
+        _mint(msg.sender, _amount);
     }
 
     /** @dev User can use this function to deposit the vault token and receive the exact
@@ -42,7 +42,7 @@ contract FakeVault is ERC20 {
     function withdrawTokens(uint256 _amount) public {
         bool depositSuccess = IERC20(address(this)).transfer(address(this), _amount);
         require(depositSuccess, "FakeVault: Deposit transfer failed.");
-        bool withdrawSuccess = acceptedToken._transfer(address(this), msg.sender, _amount);
+        bool withdrawSuccess = acceptedToken.transfer(msg.sender, _amount);
         require(withdrawSuccess, "FakeVault: Withdraw transfer failed.");
     }
 }
