@@ -3,7 +3,7 @@ import SuperValveArtifact from "../artifacts/contracts/SuperValve.sol/SuperValve
 
 export const isGlobalEthereumObjectEmpty = typeof (window as any).ethereum == null;
 
-const contractAddressToABIMap = new Map([[process.env.REACT_APP_USDC_SUPER_VALVE_ADDRESS, SuperValveArtifact.abi]]);
+const contractAddressToABIMap = new Map([[process.env.REACT_APP_fUSDC_SUPER_VALVE_ADDRESS, SuperValveArtifact.abi]]);
 
 export async function requestAccount() {
     const ethereum = (window as any).ethereum;

@@ -56,9 +56,8 @@ contract Pipe is Vault {
     constructor(
         ISuperfluid _host,
         IConstantFlowAgreementV1 _cfa,
-        ISuperToken _acceptedToken,
-        address _vault
-    ) Vault(_vault) {
+        ISuperToken _acceptedToken
+    ) Vault() {
         require(address(_host) != address(0), "Host is zero address.");
         require(address(_cfa) != address(0), "CFA is zero address.");
         require(address(_acceptedToken) != address(0), "Token is zero address.");
@@ -222,8 +221,10 @@ contract Pipe is Vault {
      */
     function vaultRewardBalanceOf(address _withdrawer, uint256 _vaultBalance) internal view returns (uint256) {
         int256 userTotalFlowedToPipe = userWithdrawData[_withdrawer].totalFlowedToPipe;
-        uint256 totalVaultWithdrawableAmount =
-            userTotalFlowedToPipe.div(inflowToPipeData.totalInflowToPipeFlow).toUint256().mul(_vaultBalance);
+        uint256 totalVaultWithdrawableAmount = userTotalFlowedToPipe
+        .div(inflowToPipeData.totalInflowToPipeFlow)
+        .toUint256()
+        .mul(_vaultBalance);
 
         return
             totalVaultWithdrawableAmount > userWithdrawData[_withdrawer].vaultWithdrawnAmount
