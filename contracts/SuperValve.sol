@@ -43,6 +43,15 @@ contract SuperValve is SuperAppBase, AccessControl {
         mapping(address => Allocation) allocations;
         uint256 userPipeFlowId;
     }
+    struct UpdateValveToPipeData {
+        bool hasAgreement;
+        PipeFlowData pipeFlowData;
+        int96 newUserToValveFlowRate;
+        address sender;
+        ISuperToken token;
+        address agreementClass;
+        bytes ctx;
+    }
 
     ISuperfluid private host;
     IConstantFlowAgreementV1 public cfa; // private
@@ -129,7 +138,8 @@ contract SuperValve is SuperAppBase, AccessControl {
     }
 
     /** @dev Allow the admin role (the deployer of the contract), to add or remove valid pipe addresses. */
-    function addOrRemovePipeAddress(address _address, bool _isValid) external onlyRole(ADMIN) {
+    function addOrRemovePipeAddress(address _address, bool _isValid) external {
+        require(hasRole(ADMIN, msg.sender), "SuperValve: You don't have permissions for this action.");
         validPipeAddresses[_address] = _isValid;
     }
 
@@ -181,31 +191,27 @@ contract SuperValve is SuperAppBase, AccessControl {
      * We will update the state to reflect the new flow rate from the SuperValve to the Pipe as well
      * as the users' updated allocation data.
      */
-    function _updateValveToPipeFlow(
-        bool _isUpdating,
-        PipeFlowData memory _pipeFlowData,
-        int96 _newUserToValveFlowRate,
-        address _sender,
-        ISuperToken _token,
-        address _agreementClass,
-        bytes calldata _ctx
-    ) internal validPipeAddress(_pipeFlowData.pipeAddress) returns (bytes memory newCtx) {
-        int96 percentage = _pipeFlowData.percentage;
-        address pipeAddress = _pipeFlowData.pipeAddress;
+    function _updateValveToPipeFlow(UpdateValveToPipeData memory data)
+        internal
+        validPipeAddress(data.pipeFlowData.pipeAddress)
+        returns (bytes memory newCtx)
+    {
+        int96 percentage = data.pipeFlowData.percentage;
+        address pipeAddress = data.pipeFlowData.pipeAddress;
         require(
             percentage >= 0 && percentage <= ONE_HUNDRED_PERCENT,
             "Your percentage is outside of the acceptable range."
         );
 
         // get the old userToPipe flow rate
-        int96 oldUserToPipeFlowRate = userAllocations[_sender].allocations[pipeAddress].flowRate;
+        int96 oldUserToPipeFlowRate = userAllocations[data.sender].allocations[pipeAddress].flowRate;
 
         // update the user flow withdraw data in Pipe for accounting purposes
-        IPipe(pipeAddress).setUserFlowWithdrawData(_sender, oldUserToPipeFlowRate);
+        IPipe(pipeAddress).setUserFlowWithdrawData(data.sender, oldUserToPipeFlowRate);
 
         // get and set the new userToPipe flow rate and % allocation to the pipe
-        int96 newUserToPipeFlowRate = mulDiv(percentage, _newUserToValveFlowRate, ONE_HUNDRED_PERCENT);
-        userAllocations[_sender].allocations[pipeAddress] = Allocation(newUserToPipeFlowRate, percentage);
+        int96 newUserToPipeFlowRate = mulDiv(percentage, data.newUserToValveFlowRate, ONE_HUNDRED_PERCENT);
+        userAllocations[data.sender].allocations[pipeAddress] = Allocation(newUserToPipeFlowRate, percentage);
 
         // get the new total flow rate from valveToPipe given the users' updated flow rate
         int96 newValveToPipeFlowRate = superValveToPipeFlowRates[pipeAddress]
@@ -216,16 +222,20 @@ contract SuperValve is SuperAppBase, AccessControl {
         superValveToPipeFlowRates[pipeAddress] = newValveToPipeFlowRate;
 
         // update the valveToPipeData in IPipe
-        IPipe(_pipeFlowData.pipeAddress).setPipeFlowData(newValveToPipeFlowRate);
-
-        bytes4 selector = _isUpdating ? cfa.updateFlow.selector : cfa.createFlow.selector;
+        IPipe(data.pipeFlowData.pipeAddress).setPipeFlowData(newValveToPipeFlowRate);
 
         // update the flow agreement between SuperValve and Pipe
         (newCtx, ) = host.callAgreementWithContext(
-            ISuperAgreement(_agreementClass),
-            abi.encodeWithSelector(selector, _token, pipeAddress, newValveToPipeFlowRate, _ctx),
+            ISuperAgreement(data.agreementClass),
+            abi.encodeWithSelector(
+                data.hasAgreement ? cfa.updateFlow.selector : cfa.createFlow.selector,
+                data.token,
+                pipeAddress,
+                newValveToPipeFlowRate,
+                data.ctx
+            ),
             "0x",
-            _ctx
+            data.ctx
         );
     }
 
@@ -293,11 +303,10 @@ contract SuperValve is SuperAppBase, AccessControl {
         for (uint256 i; i < pipeFlowData.length; i++) {
             // check if an agreement exists between the SuperValve and Pipe
             (uint256 timestamp, , , ) = cfa.getFlow(_token, address(this), pipeFlowData[i].pipeAddress);
-            bool _agreementExists = timestamp > 0;
 
             if (
                 // if the user doesn't want to create or update, we skip
-                (pipeFlowData[i].percentage == 0 && !_agreementExists) ||
+                (pipeFlowData[i].percentage == 0 && timestamp == 0) ||
                 // if the total flow rate is unchanged AND the percentage allocated to this pipe remains unchanged
                 // we don't need to update anything for this pipe
                 (userAllocations[sender].userToValveFlowRate == newUserToValveFlowRate &&
@@ -308,13 +317,15 @@ contract SuperValve is SuperAppBase, AccessControl {
             }
 
             newCtx = _updateValveToPipeFlow(
-                _agreementExists,
-                pipeFlowData[i],
-                newUserToValveFlowRate,
-                sender,
-                _token,
-                _agreementClass,
-                _ctx
+                UpdateValveToPipeData(
+                    timestamp > 0,
+                    pipeFlowData[i],
+                    newUserToValveFlowRate,
+                    sender,
+                    _token,
+                    _agreementClass,
+                    _ctx
+                )
             );
         }
     }
