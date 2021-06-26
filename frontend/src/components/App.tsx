@@ -8,6 +8,7 @@ function App() {
             createMuiTheme({
                 palette: {
                     type: prefersDarkMode ? "dark" : "light",
+                    primary: { main: "#6d8cfc" },
                 },
             }),
         [prefersDarkMode],

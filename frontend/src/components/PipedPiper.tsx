@@ -3,6 +3,8 @@ import { AppBar, Card, CardContent, CircularProgress, Container, Toolbar, Typogr
 import pipe from "../images/pipe.png";
 import { initializeContract } from "../utils/helpers";
 
+// TODO: Might need to implement a subgraph in order to get data on user's flowrate into the various
+
 interface ICurrency {
     address: string;
     symbol: string;
@@ -47,7 +49,7 @@ const PipedPiper = () => {
                     <AppBar position="static">
                         <Toolbar>
                             <img className="pipe-logo" src={pipe} />
-                            <Typography variant="h5" className="nav-title">
+                            <Typography variant="h4" className="nav-title">
                                 Piped Piper
                             </Typography>
                         </Toolbar>

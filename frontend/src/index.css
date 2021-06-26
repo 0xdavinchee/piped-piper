@@ -22,6 +22,7 @@ code {
 .nav-title {
     margin-left: 20px !important;
     font-weight: bold;
+    font-family: "VT323" !important;
 }
 .dashboard {
     margin-top: 3rem;
