@@ -84,7 +84,7 @@ contract Pipe is Vault {
      * since last flow is more recent, we either add the previous flowAmount or just get the flowAmount
      * since the deposit.
      */
-    function withdrawableFlowAmount(address _depositor, int96 _previousFlowRate) internal view returns (int256) {
+    function _withdrawableFlowAmount(address _depositor, int96 _previousFlowRate) internal view returns (int256) {
         int256 addAmount = isDepositAfterUpdate(_depositor) ? 0 : userFlowData[_depositor].flowAmountSinceUpdate;
         block.timestamp.toInt256().sub(getLastUpdatedTime(_depositor).toInt256()).mul(_previousFlowRate).add(addAmount);
     }
@@ -101,7 +101,7 @@ contract Pipe is Vault {
             )
         );
         userFlowData[_depositor].flowUpdatedTimestamp = block.timestamp;
-        userFlowData[_depositor].flowAmountSinceUpdate = withdrawableFlowAmount(_depositor, _previousFlowRate);
+        userFlowData[_depositor].flowAmountSinceUpdate = _withdrawableFlowAmount(_depositor, _previousFlowRate);
     }
 
     /**
@@ -156,10 +156,10 @@ contract Pipe is Vault {
      */
     function _withdraw(int96 _flowRate) internal {
         uint256 totalVaultBalance = _vaultBalanceOf(address(this));
-        uint256 availableVaultWithdrawAmount = vaultRewardBalanceOf(msg.sender, totalVaultBalance);
-        int256 availableFlowWithdraw = withdrawableFlowAmount(msg.sender, _flowRate);
+        uint256 availableVaultWithdrawAmount = _vaultRewardBalanceOf(msg.sender, totalVaultBalance);
+        int256 availableFlowWithdraw = _withdrawableFlowAmount(msg.sender, _flowRate);
 
-        // withdrawable vault amount (incl. rewards) + user's withdrawableFlowAmount
+        // withdrawable vault amount (incl. rewards) + user's _withdrawableFlowAmount
         uint256 withdrawableAmount = availableFlowWithdraw.toUint256();
         require(withdrawableAmount > 0 || availableVaultWithdrawAmount > 0, "There is nothing to withdraw.");
 
@@ -184,6 +184,10 @@ contract Pipe is Vault {
         emit WithdrawFromSuperApp(msg.sender, withdrawableAmount);
     }
 
+    /**************************************************************************
+     * Getter Functions
+     *************************************************************************/
+
     /**
      * @dev Returns the amount of acceptedToken flowed into the pipe. This will be used to determine
      * whether it is appropriate to deposit funds into the vault.
@@ -193,20 +197,26 @@ contract Pipe is Vault {
         return availableBalance;
     }
 
+    /** @dev Returns the amount of flowed tokens that are withdrawable by the _depositor.
+     */
+    function withdrawableFlowBalance(address _depositor, int96 _flowRate) external view returns (int256) {
+        return _withdrawableFlowAmount(_depositor, _flowRate);
+    }
+
     /** @dev Returns the total withdrawable balance, composed of the tokens deposited in the vault + rewards
      * as well as the amount of tokens that haven't been deposited but have been flowed into the Pipe.
      */
     function totalWithdrawableBalance(address _withdrawer, int96 _flowRate) external view returns (int256) {
         uint256 totalVaultBalance = _vaultBalanceOf(address(this));
-        int256 availableFlowWithdraw = withdrawableFlowAmount(_withdrawer, _flowRate);
-        return availableFlowWithdraw.add(vaultRewardBalanceOf(_withdrawer, totalVaultBalance).toInt256());
+        int256 availableFlowWithdraw = _withdrawableFlowAmount(_withdrawer, _flowRate);
+        return availableFlowWithdraw.add(_vaultRewardBalanceOf(_withdrawer, totalVaultBalance).toInt256());
     }
 
     /**
      * @dev Returns _depositor deposit in a vault and any rewards accrued,
      * calculated based on their share of the Pipe deposits.
      */
-    function vaultRewardBalanceOf(address _withdrawer, uint256 _vaultBalance) internal view returns (uint256) {
+    function _vaultRewardBalanceOf(address _withdrawer, uint256 _vaultBalance) internal view returns (uint256) {
         int256 userTotalFlowedToPipe = userFlowData[_withdrawer].totalFlowedToPipe;
         uint256 totalVaultWithdrawableAmount = userTotalFlowedToPipe
         .div(inflowToPipeData.totalInflowToPipeFlow)
