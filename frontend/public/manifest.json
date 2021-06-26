@@ -1,9 +1,9 @@
 {
-    "short_name": "React App",
-    "name": "Create React App Sample",
+    "short_name": "Piped Piper",
+    "name": "Piped Piper ETH Global Hack Money Hackathon Submission",
     "icons": [
         {
-            "src": "favicon.ico",
+            "src": "pipe.png",
             "sizes": "64x64 32x32 24x24 16x16",
             "type": "image/x-icon"
         },
@@ -11,11 +11,6 @@
             "src": "logo192.png",
             "type": "image/png",
             "sizes": "192x192"
-        },
-        {
-            "src": "logo512.png",
-            "type": "image/png",
-            "sizes": "512x512"
         }
     ],
     "start_url": ".",
