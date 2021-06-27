@@ -11,7 +11,7 @@ import { IConstantFlowAgreementV1 } from "@superfluid-finance/ethereum-contracts
 import { SuperAppBase } from "@superfluid-finance/ethereum-contracts/contracts/apps/SuperAppBase.sol";
 
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 contract SuperValve is Ownable, SuperAppBase {
@@ -92,7 +92,7 @@ contract SuperValve is Ownable, SuperAppBase {
 
     if (userFlows[requester].totalFlowRate == int96(0)) {
       // @dev Delete the flow if no longer needed
-      (newCtx, ) = _exchange.host.callAgreementWithContext(
+      (newCtx, ) = host.callAgreementWithContext(
         cfa,
         abi.encodeWithSelector(cfa.deleteFlow.selector, outputToken, address(this), requester, new bytes(0)),
         "0x", // user data
@@ -100,12 +100,12 @@ contract SuperValve is Ownable, SuperAppBase {
       );
     } else if (userFlows[requester].totalFlowRate != int96(0)) {
       // @dev Update the flow if already exists
-      (newCtx, ) = _host.callAgreementWithContext(
+      (newCtx, ) = host.callAgreementWithContext(
         cfa,
         abi.encodeWithSelector(
           cfa.updateFlow.selector,
           outputToken,
-          receiver,
+          flowReceiver,
           changeInFlowRate,
           new bytes(0) // placeholder
         ),
@@ -114,12 +114,12 @@ contract SuperValve is Ownable, SuperAppBase {
       );
     } else {
       // @dev Create a flow if doesn't exist
-      (newCtx, ) = _host.callAgreementWithContext(
+      (newCtx, ) = host.callAgreementWithContext(
         cfa,
         abi.encodeWithSelector(
           cfa.createFlow.selector,
           outputToken,
-          receiver,
+          flowReceiver,
           changeInFlowRate,
           new bytes(0) // placeholder
         ),
@@ -129,7 +129,7 @@ contract SuperValve is Ownable, SuperAppBase {
     }
 
     console.log("Done updating CFA");
-    _exchange.totalInflow = _exchange.totalInflow + changeInFlowRate;
+    totalInflow = totalInflow + changeInFlowRate;
   }
 
   /**************************************************************************
@@ -222,108 +222,7 @@ contract SuperValve is Ownable, SuperAppBase {
   modifier onlyExpected(ISuperToken superToken, address agreementClass) {
     if (_isCFAv1(agreementClass)) {
       require(_isInputToken(superToken), "!inputAccepted");
-    } else if (_isIDAv1(agreementClass)) {
-      require(_isOutputToken(superToken), "!outputAccepted");
     }
     _;
-  }
-
-  function _createFlow(address to, int96 flowRate) internal {
-    _exchange.host.callAgreement(
-      _exchange.cfa,
-      abi.encodeWithSelector(
-        _exchange.cfa.createFlow.selector,
-        _exchange.inputToken,
-        to,
-        flowRate,
-        new bytes(0) // placeholder
-      ),
-      "0x"
-    );
-  }
-
-  function _createFlow(
-    address to,
-    int96 flowRate,
-    bytes memory ctx
-  ) internal returns (bytes memory newCtx) {
-    (newCtx, ) = _exchange.host.callAgreementWithContext(
-      _exchange.cfa,
-      abi.encodeWithSelector(
-        _exchange.cfa.createFlow.selector,
-        _exchange.inputToken,
-        to,
-        flowRate,
-        new bytes(0) // placeholder
-      ),
-      "0x",
-      ctx
-    );
-  }
-
-  function _updateFlow(address to, int96 flowRate) internal {
-    _exchange.host.callAgreement(
-      _exchange.cfa,
-      abi.encodeWithSelector(
-        _exchange.cfa.updateFlow.selector,
-        _exchange.inputToken,
-        to,
-        flowRate,
-        new bytes(0) // placeholder
-      ),
-      "0x"
-    );
-  }
-
-  function _updateFlow(
-    address to,
-    int96 flowRate,
-    bytes memory ctx
-  ) internal returns (bytes memory newCtx) {
-    (newCtx, ) = _exchange.host.callAgreementWithContext(
-      _exchange.cfa,
-      abi.encodeWithSelector(
-        _exchange.cfa.updateFlow.selector,
-        _exchange.inputToken,
-        to,
-        flowRate,
-        new bytes(0) // placeholder
-      ),
-      "0x",
-      ctx
-    );
-  }
-
-  function _deleteFlow(address from, address to) internal {
-    _exchange.host.callAgreement(
-      _exchange.cfa,
-      abi.encodeWithSelector(
-        _exchange.cfa.deleteFlow.selector,
-        _exchange.inputToken,
-        from,
-        to,
-        new bytes(0) // placeholder
-      ),
-      "0x"
-    );
-  }
-
-  function _deleteFlow(
-    address from,
-    address to,
-    bytes memory ctx
-  ) internal returns (bytes memory newCtx) {
-    (newCtx, ) = _exchange.host.callAgreementWithContext(
-      _exchange.cfa,
-      abi.encodeWithSelector(
-        _exchange.cfa.deleteFlow.selector,
-        _exchange.inputToken,
-        from,
-        to,
-        new bytes(0) // placeholder
-      ),
-      "0x",
-      ctx
-    );
   }
 }
