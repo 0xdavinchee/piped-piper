@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Container, Typography } from "@material-ui/core";
 import { BrowserRouter, Switch, Route, useHistory, useLocation } from "react-router-dom";
 import Nav from "./Nav";
@@ -8,6 +8,7 @@ import Valve from "./ValveScreen";
 import Vault from "./VaultScreen";
 import { PATH, STORAGE } from "../utils/constants";
 import { IValveData } from "../utils/interfaces";
+import { requestAccount } from "../utils/helpers";
 
 // TODO: Might need to implement a subgraph in order to get data on user's flowrate into the various
 
@@ -27,9 +28,10 @@ const checkHasVisited = () => {
     }
 };
 
-const Router = () => {
+const Router = ({ userAddress }: { userAddress: string }) => {
     const history = useHistory();
     const location = useLocation();
+
     useEffect(() => {
         if (location.pathname !== PATH.Landing) return;
         const hasEntered = checkHasVisited();
@@ -39,7 +41,7 @@ const Router = () => {
         } else {
             history.push(PATH.Landing);
         }
-    }, []);
+    }, [history, location.pathname]);
 
     const title = () => {
         return location.pathname.split("/")[1];
@@ -54,7 +56,9 @@ const Router = () => {
 
     return (
         <div className="router-container">
-            <Typography variant="h1">{currencyOrVault() + title()}</Typography>
+            <Typography className="title" variant="h1">
+                {currencyOrVault() + title()}
+            </Typography>
             <Switch>
                 <Route exact path={PATH.Landing}>
                     <Landing />
@@ -63,7 +67,7 @@ const Router = () => {
                     <Home valveData={VALVE_DATA} />
                 </Route>
                 <Route exact path={PATH.Valve}>
-                    <Valve currency={currencyOrVault()} />
+                    <Valve currency={currencyOrVault()} userAddress={userAddress} />
                 </Route>
                 <Route exact path={PATH.Vault}>
                     <Vault />
@@ -74,11 +78,19 @@ const Router = () => {
 };
 
 const PipedPiper = () => {
+    const [userAddress, setUserAddress] = useState("");
+
+    useEffect(() => {
+        (async () => {
+            const result = await requestAccount();
+            setUserAddress(result[0].toLowerCase());
+        })();
+    }, []);
     return (
         <Container className="container">
             <BrowserRouter>
-                <Nav />
-                <Router />
+                <Nav userAddress={userAddress} />
+                <Router userAddress={userAddress} />
             </BrowserRouter>
         </Container>
     );

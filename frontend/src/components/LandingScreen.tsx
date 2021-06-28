@@ -14,7 +14,7 @@ const Landing = () => {
     };
     return (
         <div>
-            <Typography variant="h1" className="landing-title">
+            <Typography variant="h1" className="title">
                 welcome to piped piper
             </Typography>
             <div className="landing-button-container">

@@ -6,7 +6,7 @@ const Home = ({ valveData }: { valveData: IValveData[] }) => {
         <div>
             <div>
                 {valveData.map(x => (
-                    <ValveCard valveData={x} />
+                    <ValveCard key={x.address} valveData={x} />
                 ))}
             </div>
         </div>

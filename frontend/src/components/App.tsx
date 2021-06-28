@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { createMuiTheme, CssBaseline, ThemeProvider, useMediaQuery } from "@material-ui/core";
 import PipedPiper from "./PipedPiper";
+
 function App() {
     const prefersDarkMode = useMediaQuery("(prefers-color-scheme: dark)");
     const theme = useMemo(
@@ -10,8 +11,8 @@ function App() {
                     MuiInputLabel: {
                         root: {
                             fontSize: "1.4rem",
+                            "&$focused": { fontSize: "1.4rem" },
                         },
-                        focused: { fontSize: "1.4rem" },
                         shrink: { fontSize: "1.4rem" },
                     },
                     MuiInputBase: {
@@ -24,6 +25,9 @@ function App() {
                 },
                 typography: {
                     fontFamily: "VT323",
+                    body1: {
+                        fontSize: "1.2rem",
+                    },
                 },
             }),
         [prefersDarkMode],
