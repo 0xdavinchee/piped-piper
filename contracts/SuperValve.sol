@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-pragma solidity >=0.7.1;
-pragma experimental ABIEncoderV2;
+pragma solidity >=0.8.0;
+pragma abicoder v2;
 
 import "hardhat/console.sol";
 
@@ -13,6 +13,7 @@ import { SuperAppBase } from "@superfluid-finance/ethereum-contracts/contracts/a
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
 contract SuperValve is Ownable, SuperAppBase {
   using SafeERC20 for ERC20;
@@ -20,18 +21,21 @@ contract SuperValve is Ownable, SuperAppBase {
   // Contract state
   ISuperfluid public host;
   IConstantFlowAgreementV1 public cfa;
-  ERC20 public inputToken;
-  ISuperToken public outputToken;
+  ISuperToken public acceptedToken;
+
+  // TODO Change all int to int96
+  // Holds total flows across all pipes
+  int public totalInflow;
 
   // List of compatible pipe contracts
   address[] private validPipes;
 
   struct FlowData {
-    uint256 totalFlowRate;
-    mapping(address => uint256) pipeAllocation;
-  }
+    int totalFlowRate;
 
-  uint256 public totalInflow;
+    // Value out of total user flow allocated to pipe
+    mapping(address => int) pipeAllocation; 
+  }
 
   // User outflow state
   mapping(address => FlowData) public userFlows;
@@ -41,22 +45,18 @@ contract SuperValve is Ownable, SuperAppBase {
   event Distribution(address token, uint256 totalAmount); // TODO: Implement triggered distribution
 
   constructor(
-    ISuperfluid _host,
-    IConstantFlowAgreementV1 _cfa,
-    ERC20 _inputToken,
-    ISuperToken _outputToken
+    address _host,
+    address _cfa,
+    ISuperToken _acceptedToken
   ) {
     require(address(_host) != address(0), "host address invalid");
     require(address(_cfa) != address(0), "cfa address invalid");
-    require(address(_inputToken) != address(0), "inputToken address invalid");
-    require(address(_outputToken) != address(0), "outputToken address invalid");
-    require(!_host.isApp(ISuperApp(msg.sender)), "Owner is a SuperApp");
-    require(ISuperToken(_outputToken).getUnderlyingToken() == _inputToken, "outputToken does not match inputToken");
+    require(address(_acceptedToken) != address(0), "acceptedToken address invalid");
+    require(!ISuperfluid(_host).isApp(ISuperApp(msg.sender)), "Owner cannot be a SuperApp");
 
-    _host = host;
-    _cfa = cfa;
-    _inputToken = inputToken;
-    _outputToken = outputToken;
+    host = ISuperfluid(_host);
+    cfa = IConstantFlowAgreementV1(_cfa);
+    acceptedToken = ISuperToken(_acceptedToken);
 
     uint256 configWord = SuperAppDefinitions.APP_LEVEL_FINAL |
       SuperAppDefinitions.BEFORE_AGREEMENT_CREATED_NOOP |
@@ -71,54 +71,67 @@ contract SuperValve is Ownable, SuperAppBase {
    *************************************************************************/
 
   /// @dev If a new stream is opened, or an existing one is opened
-  function _updateOutflow(bytes calldata ctx, bytes calldata agreementData) private returns (bytes memory newCtx) {
+  function _updateOutflow(bytes calldata ctx, bytes calldata agreementData) internal returns (bytes memory newCtx) {
     newCtx = ctx;
 
+    // Create a new flow to the pipe and assign to the user
     (address requester, address flowReceiver) = abi.decode(agreementData, (address, address));
-    int96 changeInFlowRate = cfa.getNetFlow(inputToken, address(this)) - totalInflow;
 
-    if (userFlows[requester].totalFlowRate == changeInFlowRate) {
-      // Rate has not changed, return
-      return newCtx;
+    address pipe;
+    if (isPipeValid(flowReceiver)) {
+      pipe = flowReceiver;
     } else {
-      // Add/update the streamer
-      userFlows[requester].totalFlowRate = userFlows[requester].totalFlowRate + changeInFlowRate;
+      return newCtx;
     }
 
-    // Return if reciever is not a pipe
-    if (!isPipeValid(flowReceiver)) return newCtx;
+    int changeInFlowRate = cfa.getNetFlow(acceptedToken, address(this)) - totalInflow;
 
-    console.log("Updating CFA");
+    // If rate has not changed, return
+    if (changeInFlowRate == 0) return newCtx;
 
-    if (userFlows[requester].totalFlowRate == int96(0)) {
-      // @dev Delete the flow if no longer needed
+    int pipeFlowRate = getPipeInflow(pipe);
+    int resultingPipeFlow = pipeFlowRate + changeInFlowRate;
+
+    // Update flows for pipe and internal user accounting
+    if (resultingPipeFlow <= 0) {
+
+      // @dev User has 0 net flow, deleting the stream
       (newCtx, ) = host.callAgreementWithContext(
         cfa,
-        abi.encodeWithSelector(cfa.deleteFlow.selector, outputToken, address(this), requester, new bytes(0)),
+        abi.encodeWithSelector(cfa.deleteFlow.selector, acceptedToken, address(this), pipe, new bytes(0)),
         "0x", // user data
         newCtx
       );
-    } else if (userFlows[requester].totalFlowRate != int96(0)) {
+
+      userFlows[requester].totalFlowRate = 0;
+      userFlows[requester].pipeAllocation[pipe] = 0;
+
+    } else if (pipeFlowRate != 0) {
+
       // @dev Update the flow if already exists
       (newCtx, ) = host.callAgreementWithContext(
         cfa,
         abi.encodeWithSelector(
           cfa.updateFlow.selector,
-          outputToken,
-          flowReceiver,
-          changeInFlowRate,
+          acceptedToken,
+          pipe,
+          resultingPipeFlow,
           new bytes(0) // placeholder
         ),
         "0x",
         newCtx
       );
+
+      userFlows[requester].totalFlowRate = userFlows[requester].totalFlowRate + changeInFlowRate;
+      userFlows[requester].pipeAllocation[pipe] = userFlows[requester].pipeAllocation[pipe] + changeInFlowRate;
+
     } else {
       // @dev Create a flow if doesn't exist
       (newCtx, ) = host.callAgreementWithContext(
         cfa,
         abi.encodeWithSelector(
           cfa.createFlow.selector,
-          outputToken,
+          acceptedToken,
           flowReceiver,
           changeInFlowRate,
           new bytes(0) // placeholder
@@ -126,10 +139,11 @@ contract SuperValve is Ownable, SuperAppBase {
         "0x",
         newCtx
       );
+      userFlows[requester].totalFlowRate = changeInFlowRate;
+      userFlows[requester].pipeAllocation[pipe] = changeInFlowRate;
     }
 
-    console.log("Done updating CFA");
-    totalInflow = totalInflow + changeInFlowRate;
+    totalInflow = cfa.getNetFlow(acceptedToken, address(this));
   }
 
   /**************************************************************************
@@ -146,7 +160,7 @@ contract SuperValve is Ownable, SuperAppBase {
   }
 
   function isPipeValid(address _pipeAddress) public returns (bool) {
-    for (uint256 i = 0; i < validPipes.length; i++) {
+    for (uint32 i = 0; i < validPipes.length; i++) {
       if (validPipes[i] == _pipeAddress) {
         return true;
       }
@@ -156,6 +170,14 @@ contract SuperValve is Ownable, SuperAppBase {
 
   function getValidPipes() public view returns (address[] memory) {
     return validPipes;
+  }
+
+  function getPipeInflow(address _pipeAddress) public returns (int96) {
+    if(isPipeValid(_pipeAddress)) {
+      cfa.getNetFlow(acceptedToken, _pipeAddress);
+    } else {
+      return 0;
+    }
   }
 
   /**************************************************************************
@@ -181,7 +203,7 @@ contract SuperValve is Ownable, SuperAppBase {
     bytes calldata, //_cbdata,
     bytes calldata _ctx
   ) external override onlyExpected(_superToken, _agreementClass) onlyHost returns (bytes memory newCtx) {
-    if (!_isInputToken(_superToken) || !_isCFAv1(_agreementClass)) return _ctx;
+    if (!_isAcceptedToken(_superToken) || !_isCFAv1(_agreementClass)) return _ctx;
 
     return _updateOutflow(_ctx, _agreementData);
   }
@@ -195,17 +217,13 @@ contract SuperValve is Ownable, SuperAppBase {
     bytes calldata _ctx
   ) external override onlyHost returns (bytes memory newCtx) {
     // According to the app basic guidelines, we should never revert in a termination callback
-    if (!_isInputToken(_superToken) || !_isCFAv1(_agreementClass)) return _ctx;
+    if (!_isAcceptedToken(_superToken) || !_isCFAv1(_agreementClass)) return _ctx;
 
     return _updateOutflow(_ctx, _agreementData);
   }
 
-  function _isInputToken(ISuperToken superToken) internal view returns (bool) {
-    return address(superToken) == address(inputToken);
-  }
-
-  function _isOutputToken(ISuperToken superToken) internal view returns (bool) {
-    return address(superToken) == address(outputToken);
+  function _isAcceptedToken(ISuperToken superToken) internal view returns (bool) {
+    return address(superToken) == address(acceptedToken);
   }
 
   function _isCFAv1(address agreementClass) internal view returns (bool) {
@@ -221,7 +239,7 @@ contract SuperValve is Ownable, SuperAppBase {
 
   modifier onlyExpected(ISuperToken superToken, address agreementClass) {
     if (_isCFAv1(agreementClass)) {
-      require(_isInputToken(superToken), "!inputAccepted");
+      require(_isAcceptedToken(superToken), "!inputAccepted");
     }
     _;
   }
