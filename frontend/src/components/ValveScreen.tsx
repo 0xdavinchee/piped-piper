@@ -1,9 +1,10 @@
 import { Card, CardContent, CircularProgress, Typography } from "@material-ui/core";
+import { useParams } from "react-router-dom";
 import { useCallback, useEffect, useState } from "react";
 import { initializeContract } from "../utils/helpers";
 
 const Valve = () => {
-    const [currencyAddress, setCurrencyAddress] = useState("");
+    const { address }: { address: string } = useParams();
     const [loading, setLoading] = useState(true);
     const [time, setTime] = useState(new Date());
     const [flowRate, setFlowRate] = useState(0);
@@ -26,10 +27,10 @@ const Valve = () => {
         return () => clearTimeout(timer);
     });
 
-    const getAndSetBaseData = useCallback(async () => {
-        const contract = initializeContract(true, currencyAddress);
+    useEffect(() => {
+        const contract = initializeContract(true, address);
         if (contract == null) return;
-    }, [currencyAddress]);
+    }, [address]);
 
     return (
         <div>

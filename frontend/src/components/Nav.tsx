@@ -11,7 +11,7 @@ const Nav = () => {
                     <Link className="link" to={PATH.Home} />
                     <img className="pipe-logo" src={pipe} />
                     <Typography variant="h4" className="nav-title">
-                        Piped Piper
+                        piped piper
                     </Typography>
                 </div>
             </Toolbar>

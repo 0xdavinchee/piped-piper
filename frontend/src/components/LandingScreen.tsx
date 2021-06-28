@@ -13,15 +13,16 @@ const Landing = () => {
         }
     };
     return (
-        <>
-            <Typography variant="h1" className="home-title home-welcome-text">
-                Welcome to Piped Piper
+        <div>
+            <Typography variant="h1" className="landing-title">
+                welcome to piped piper
             </Typography>
-            <div></div>
-            <Button variant="contained" color="primary" onClick={() => enterApp()}>
-                Enter App
-            </Button>
-        </>
+            <div className="landing-button-container">
+                <Button className="button" variant="contained" color="primary" onClick={() => enterApp()}>
+                    enter app
+                </Button>
+            </div>
+        </div>
     );
 };
 

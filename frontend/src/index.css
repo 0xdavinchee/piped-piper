@@ -1,7 +1,7 @@
 body {
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans",
-        "Droid Sans", "Helvetica Neue", sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "VT323", "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell",
+        "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
@@ -18,6 +18,9 @@ code {
 }
 
 /** General Styles */
+.title {
+    font-family: "VT323" !important;
+}
 .link {
     position: absolute;
     width: 100%;
@@ -25,6 +28,13 @@ code {
 }
 .anchor {
     position: relative;
+}
+.router-container {
+    margin-top: 3rem;
+}
+.button {
+    font-family: "VT323" !important;
+    font-size: xx-large !important;
 }
 
 /** Nav Styles */
@@ -40,18 +50,17 @@ code {
     font-weight: bold;
     font-family: "VT323" !important;
 }
-
-/** Home Styles */
-.home {
+/** Landing Styles */
+.landing-button-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
     margin-top: 3rem;
 }
-.home-title {
+.landing-title {
+    text-align: center;
     font-family: "VT323" !important;
 }
-.home-welcome-text {
-    text-align: center;
-}
-
 .dashboard {
     margin-top: 3rem;
 }
