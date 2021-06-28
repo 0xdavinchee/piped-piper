@@ -9,7 +9,7 @@ import { initializeContract, requestAccount } from "../utils/helpers";
 // TODO: there is no easy way to get array data directly via ethereum - subgraph may be needed for this
 // you can only get one element at a time.
 
-const Valve = () => {
+const Valve = ({ currency }: { currency: string }) => {
     const { valveAddress }: { valveAddress: string } = useParams();
     const [loading, setLoading] = useState(true);
     const [time, setTime] = useState(new Date());
@@ -90,19 +90,23 @@ const Valve = () => {
                     </Card>
                     <div className="vault-selector">
                         <Typography variant="h3">Vaults</Typography>
-                        <Typography variant="body1">
-                            Below is a selection of vaults which you can choose to redirect your cash flow into, you can
-                            select one or more of these vaults and specify the monthly flow rate and the % of your flow
-                            which you'd like to deposit into each of the vaults.
+                        <Typography className="text" variant="body1">
+                            Below is a selection of vaults which you can choose to redirect your {currency} cash flow
+                            into, you can select one or more of these vaults and specify the monthly flow rate and the %
+                            of your flow which you'd like to deposit into each of the vaults.
                         </Typography>
-                        <div></div>
-                        <TextField
-                            className="text-field"
-                            type="number"
-                            label="Flow rate (monthly)"
-                            onChange={e => setFlowRate(e.target.value)}
-                            value={flowRate}
-                        />
+                        <div className="vault-selection-container">
+                            <div className="flow-rate-selector">
+                                <TextField
+                                    className="text-field"
+                                    type="number"
+                                    label="Flow rate"
+                                    onChange={e => setFlowRate(e.target.value)}
+                                    value={flowRate}
+                                />
+                                <Typography variant="h6">{currency}/month</Typography>
+                            </div>
+                        </div>
                     </div>
                 </>
             )}

@@ -63,7 +63,7 @@ const Router = () => {
                     <Home valveData={VALVE_DATA} />
                 </Route>
                 <Route exact path={PATH.Valve}>
-                    <Valve />
+                    <Valve currency={currencyOrVault()} />
                 </Route>
                 <Route exact path={PATH.Vault}>
                     <Vault />

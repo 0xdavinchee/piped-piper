@@ -6,6 +6,18 @@ function App() {
     const theme = useMemo(
         () =>
             createMuiTheme({
+                overrides: {
+                    MuiInputLabel: {
+                        root: {
+                            fontSize: "1.4rem",
+                        },
+                        focused: { fontSize: "1.4rem" },
+                        shrink: { fontSize: "1.4rem" },
+                    },
+                    MuiInputBase: {
+                        root: { fontSize: "1.4rem" },
+                    },
+                },
                 palette: {
                     type: prefersDarkMode ? "dark" : "light",
                     primary: { main: "#6d8cfc" },

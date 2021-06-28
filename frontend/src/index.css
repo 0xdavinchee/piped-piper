@@ -35,6 +35,9 @@ code {
 .text {
     font-size: 1.25rem !important;
 }
+.text-field {
+    min-width: 150px !important;
+}
 
 /** Nav Styles */
 .nav-container {
@@ -88,4 +91,11 @@ code {
 /** Valve Selector Styles */
 .vault-selector {
     margin-top: 3rem;
+}
+.vault-selection-container {
+    margin-top: 1.5rem;
+}
+.flow-rate-selector {
+    display: flex;
+    align-items: flex-end;
 }
