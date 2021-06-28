@@ -1,7 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
-import { AppBar, Card, CardContent, CircularProgress, Container, Toolbar, Typography } from "@material-ui/core";
-import pipe from "../images/pipe.png";
-import { initializeContract } from "../utils/helpers";
+import { useEffect } from "react";
+import { Container } from "@material-ui/core";
+import { BrowserRouter, Switch, Route, useHistory } from "react-router-dom";
+import Nav from "./Nav";
+import Landing from "./LandingScreen";
+import Home from "./HomeScreen";
+import Valve from "./ValveScreen";
+import Vault from "./VaultScreen";
+import { PATH, STORAGE } from "../utils/constants";
 
 // TODO: Might need to implement a subgraph in order to get data on user's flowrate into the various
 
@@ -10,64 +15,50 @@ interface ICurrency {
     symbol: string;
 }
 
-const INITIAL_CURRENCIES = [{ address: process.env.REACT_APP_fUSDC_SUPER_VALVE_ADDRESS || "", symbol: "fUSDC" }];
+const checkHasVisited = () => {
+    try {
+        return localStorage.getItem(STORAGE.HasVisited) === "true";
+    } catch {
+        return false;
+    }
+};
 
-const PipedPiper = () => {
-    const [loading, setLoading] = useState(true);
-    const [currencies, setCurrencies] = useState<ICurrency[]>(INITIAL_CURRENCIES);
-    const [currencyAddress, setCurrencyAddress] = useState("");
-    const [time, setTime] = useState(new Date());
-    const [flowRate, setFlowRate] = useState(0);
-
-    const getAndSetBaseData = useCallback(async () => {
-        const contract = initializeContract(true, currencyAddress);
-        if (contract == null) return;
-    }, [currencyAddress]);
-
+const Router = () => {
+    const history = useHistory();
     useEffect(() => {
-        (async () => {
-            try {
-                setLoading(false);
-            } catch (err) {
-                console.error(err);
-            }
-        })();
+        const hasEntered = checkHasVisited();
+        if (hasEntered) {
+            history.push(PATH.Home);
+        } else {
+            history.push(PATH.Landing);
+        }
     }, []);
 
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            setTime(new Date());
-        }, 1000);
-
-        return () => clearTimeout(timer);
-    });
     return (
-        <Container className="container" maxWidth="md">
-            {loading && <CircularProgress className="loading" />}
-            {!loading && (
-                <>
-                    <AppBar position="static">
-                        <Toolbar>
-                            <img className="pipe-logo" src={pipe} />
-                            <Typography variant="h4" className="nav-title">
-                                Piped Piper
-                            </Typography>
-                        </Toolbar>
-                    </AppBar>
-                    <Card className="dashboard">
-                        <CardContent>
-                            <Typography variant="h5">Total Flow Balance</Typography>
-                            <Typography variant="body2" color="textSecondary">
-                                Total Flow Balance
-                            </Typography>
-                            <Typography variant="h5">Flow Rate</Typography>
-                            <Typography variant="body2" color="textSecondary">
-                                Total Flow Balance
-                            </Typography>
-                        </CardContent>
-                    </Card>
-                </>
-            )}
+        <Switch>
+            <Route exact path={PATH.Landing}>
+                <Landing />
+            </Route>
+            <Route exact path={PATH.Home}>
+                <Home />
+            </Route>
+            <Route exact path={PATH.Valve}>
+                <Valve />
+            </Route>
+            <Route exact path={PATH.Vault}>
+                <Vault />
+            </Route>
+        </Switch>
+    );
+};
+
+const PipedPiper = () => {
+    return (
+        <Container className="container">
+            <BrowserRouter>
+                <Nav />
+                <Router />
+            </BrowserRouter>
         </Container>
     );
 };
