@@ -10,6 +10,9 @@ function App() {
                     type: prefersDarkMode ? "dark" : "light",
                     primary: { main: "#6d8cfc" },
                 },
+                typography: {
+                    fontFamily: "VT323",
+                },
             }),
         [prefersDarkMode],
     );

@@ -13,7 +13,7 @@ import { IValveData } from "../utils/interfaces";
 
 const VALVE_DATA: IValveData[] = [
     {
-        address: "0x421c478e6d993d02cf3699D684ad23b6879722Ae",
+        address: process.env.REACT_APP_fUSDC_SUPER_VALVE_ADDRESS || "",
         currency: "fUSDC",
         image_url: "https://s2.coinmarketcap.com/static/img/coins/64x64/3408.png",
     },
@@ -54,9 +54,7 @@ const Router = () => {
 
     return (
         <div className="router-container">
-            <Typography variant="h1" className="title">
-                {currencyOrVault() + title()}
-            </Typography>
+            <Typography variant="h1">{currencyOrVault() + title()}</Typography>
             <Switch>
                 <Route exact path={PATH.Landing}>
                     <Landing />
