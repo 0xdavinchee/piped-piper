@@ -41,12 +41,7 @@ if (!infuraApiKey) {
 function createTestnetConfig(network: keyof typeof chainIds): NetworkUserConfig {
     const url: string = "https://" + network + ".infura.io/v3/" + infuraApiKey;
     return {
-        accounts: {
-            count: 10,
-            initialIndex: 0,
-            mnemonic,
-            path: "m/44'/60'/0'/0",
-        },
+        accounts: [process.env.TEST_ACCOUNT_PRIVATE_KEY || ""],
         chainId: chainIds[network],
         url,
     };

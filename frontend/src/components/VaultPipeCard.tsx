@@ -8,7 +8,7 @@ interface IVaultPipeCardProps {
 }
 const VaultPipeCard = (props: IVaultPipeCardProps) => {
     return (
-        <Card key={props.data.address} className="pipe-vault">
+        <Card key={props.data.pipeAddress} className="pipe-vault">
             <CardContent>
                 <div>
                     <Typography variant="h4">{props.data.name}</Typography>
@@ -21,7 +21,7 @@ const VaultPipeCard = (props: IVaultPipeCardProps) => {
                     label="Allocation"
                     onChange={e => props.handleUpdateAllocation(e.target.value, props.index)}
                     type="number"
-                    value={props.data.allocation}
+                    value={props.data.percentage}
                 />
             </CardContent>
         </Card>

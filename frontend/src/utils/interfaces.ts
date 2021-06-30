@@ -5,10 +5,10 @@ export interface IValveData {
 }
 
 export interface IPipeData {
-    address: string;
+    pipeAddress: string;
     name: string;
 }
 
 export interface IUserPipeData extends IPipeData {
-    allocation: string;
+    percentage: string;
 }
