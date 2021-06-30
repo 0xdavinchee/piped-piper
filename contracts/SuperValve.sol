@@ -126,12 +126,10 @@ contract SuperValve is SuperAppBase, AccessControl {
     }
 
     function getUserPipeFlowRate(address _user, address _pipe) public view returns (int96) {
-        UserAllocation storage userAllocation = userAllocations[_user];
-
-        (, int96 totalFlow, , ) = cfa.getFlow(acceptedToken, _user, address(this));
-        int96 pipeAllocation = userAllocation.allocations[_pipe];
+        (, int96 userToValveFlow, , ) = cfa.getFlow(acceptedToken, _user, address(this));
+        int96 pipeAllocationPercentage = userAllocations[_user].allocations[_pipe];
         return
-            totalFlow.mul(pipeAllocation, "Int96 Error: Could not multiply.").div(
+            userToValveFlow.mul(pipeAllocationPercentage, "Int96 Error: Could not multiply.").div(
                 ONE_HUNDRED_PERCENT,
                 "Int96 Error: Could not divide."
             );
@@ -162,9 +160,7 @@ contract SuperValve is SuperAppBase, AccessControl {
                 index = i;
             }
         }
-        for (uint256 i = index; i < validPipeAddresses.length; i++) {
-            validPipeAddresses[i] = validPipeAddresses[i + 1];
-        }
+        validPipeAddresses[index] = validPipeAddresses[validPipeAddresses.length - 1];
         validPipeAddresses.pop();
     }
 
@@ -200,11 +196,9 @@ contract SuperValve is SuperAppBase, AccessControl {
             validPipeAddresses.length == _pipeFlowData.length,
             "SuperValve: Your number of allocations is incorrect."
         );
+        // TODO: we need to do a check for whether or not pipe address is valid
+        // previous logic here was faulty.
         for (uint256 i; i < validPipeAddresses.length; i++) {
-            require(
-                validPipeAddresses[i] == _pipeFlowData[i].pipeAddress,
-                "SuperValve: This is not a registered vault address."
-            );
             userAllocations[msg.sender].allocations[_pipeFlowData[i].pipeAddress] = _pipeFlowData[i].percentage;
         }
         isFullyAllocated(msg.sender);
@@ -231,6 +225,7 @@ contract SuperValve is SuperAppBase, AccessControl {
         validPipeAddress(data.pipeAddress)
         returns (bytes memory newCtx)
     {
+        newCtx = data.ctx;
         int96 percentage = data.percentage;
         address pipeAddress = data.pipeAddress;
         require(
@@ -238,15 +233,15 @@ contract SuperValve is SuperAppBase, AccessControl {
             "SuperValve: Your percentage is outside of the acceptable range."
         );
 
-        // get the old userToPipe flow rate
-        int96 oldUserToPipeFlowRate = getUserPipeFlowRate(data.sender, pipeAddress);
+        // get the old userToPipe flow rate, when we first create a flow, we must use 0 otherwise
+        // newValveToPipeFlowRate is equal to 0
+        int96 oldUserToPipeFlowRate = data.hasAgreement ? getUserPipeFlowRate(data.sender, pipeAddress) : 0;
 
         // update the user flow withdraw data in Pipe for accounting purposes
         IPipe(pipeAddress).setUserFlowWithdrawData(data.sender, oldUserToPipeFlowRate);
 
-        // get and set the new userToPipe flow rate and % allocation to the pipe
+        // get and set the new userToPipe flow rate
         int96 newUserToPipeFlowRate = mulDiv(percentage, data.newUserToValveFlowRate, ONE_HUNDRED_PERCENT);
-        userAllocations[data.sender].allocations[pipeAddress] = percentage;
 
         // get the new total flow rate from valveToPipe given the users' updated flow rate
         int96 newValveToPipeFlowRate = superValveToPipeFlowRates[pipeAddress]
@@ -259,6 +254,7 @@ contract SuperValve is SuperAppBase, AccessControl {
         // update the valveToPipeData in IPipe
         IPipe(data.pipeAddress).setPipeFlowData(newValveToPipeFlowRate);
 
+        // TODO: it is a possible event that newValveToPipeFlowRate is 0 if users stop their flow to the pipe.
         // update the flow agreement between SuperValve and Pipe
         (newCtx, ) = host.callAgreementWithContext(
             ISuperAgreement(data.agreementClass),
@@ -267,10 +263,10 @@ contract SuperValve is SuperAppBase, AccessControl {
                 data.token,
                 pipeAddress,
                 newValveToPipeFlowRate,
-                data.ctx
+                new bytes(0) // placeholder
             ),
             "0x",
-            data.ctx
+            newCtx
         );
     }
 
@@ -284,6 +280,7 @@ contract SuperValve is SuperAppBase, AccessControl {
         address _agreementClass,
         bytes calldata _ctx
     ) internal returns (bytes memory newCtx) {
+        newCtx = _ctx;
         // get the previous userToPipeFlowRate
         int96 oldUserToPipeFlowRate = getUserPipeFlowRate(_sender, _pipeAddress);
 
@@ -308,9 +305,15 @@ contract SuperValve is SuperAppBase, AccessControl {
         // update the flow agreement between SuperValve and Pipe
         (newCtx, ) = host.callAgreementWithContext(
             ISuperAgreement(_agreementClass),
-            abi.encodeWithSelector(cfa.updateFlow.selector, acceptedToken, _pipeAddress, newValveToPipeFlowRate, _ctx),
+            abi.encodeWithSelector(
+                cfa.updateFlow.selector,
+                acceptedToken,
+                _pipeAddress,
+                newValveToPipeFlowRate,
+                new bytes(0) // placeholder
+            ),
             "0x",
-            _ctx
+            newCtx
         );
     }
 
@@ -331,7 +334,14 @@ contract SuperValve is SuperAppBase, AccessControl {
         for (uint256 i; i < validPipeAddresses.length; i++) {
             // check if an agreement exists between the SuperValve and Pipe
             (uint256 timestamp, , , ) = cfa.getFlow(acceptedToken, address(this), validPipeAddresses[i]);
+
             int96 percentage = userAllocations[sender].allocations[validPipeAddresses[i]];
+
+            // if the user does not want to allocate anything to the pipe and no agreement exists currently,
+            // we skip.
+            if (percentage == 0 && timestamp == 0) {
+                continue;
+            }
 
             newCtx = _updateValveToPipeFlow(
                 UpdateValveToPipeData(
@@ -342,7 +352,7 @@ contract SuperValve is SuperAppBase, AccessControl {
                     sender,
                     acceptedToken,
                     _agreementClass,
-                    _ctx
+                    newCtx
                 )
             );
         }

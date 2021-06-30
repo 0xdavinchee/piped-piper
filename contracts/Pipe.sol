@@ -188,15 +188,6 @@ contract Pipe is Vault {
      * Getter Functions
      *************************************************************************/
 
-    /**
-     * @dev Returns the amount of acceptedToken flowed into the pipe. This will be used to determine
-     * whether it is appropriate to deposit funds into the vault.
-     */
-    function pipeFlowBalance() external view returns (int256) {
-        (int256 availableBalance, , , ) = ISuperToken(acceptedToken).realtimeBalanceOfNow(address(this));
-        return availableBalance;
-    }
-
     /** @dev Returns the amount of flowed tokens that are withdrawable by the _depositor.
      */
     function withdrawableFlowBalance(address _depositor, int96 _flowRate) external view returns (int256) {
