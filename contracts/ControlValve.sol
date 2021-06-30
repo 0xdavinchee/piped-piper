@@ -15,7 +15,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 
-contract SuperValve is Ownable, SuperAppBase {
+contract ControlValve is Ownable, SuperAppBase {
   using SafeERC20 for ERC20;
 
   // Contract state
@@ -67,7 +67,7 @@ contract SuperValve is Ownable, SuperAppBase {
   }
 
   /**************************************************************************
-   * SuperValve Logic
+   * ControlValve Logic
    *************************************************************************/
 
   /// @dev If a new stream is opened, or an existing one is opened
@@ -159,7 +159,7 @@ contract SuperValve is Ownable, SuperAppBase {
     validPipes.push(_pipeAddress);
   }
 
-  function isPipeValid(address _pipeAddress) public returns (bool) {
+  function isPipeValid(address _pipeAddress) public view returns (bool) {
     for (uint32 i = 0; i < validPipes.length; i++) {
       if (validPipes[i] == _pipeAddress) {
         return true;

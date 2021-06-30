@@ -5,10 +5,9 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
-import "./interfaces/IRecipe.sol";
 
 
-contract Pipe is AccessControl {
+contract Oven is AccessControl {
   using SafeERC20 for IERC20;
   using Math for uint256;
 
