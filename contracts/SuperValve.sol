@@ -25,32 +25,23 @@ import { Int96SafeMath } from "@superfluid-finance/ethereum-contracts/contracts/
 /// Certain variables are set to public for testing purposes.
 contract SuperValve is SuperAppBase, AccessControl {
     bytes32 private constant ADMIN = keccak256("ADMIN");
+    string private constant ADD_ERROR = "INT96: Error adding.";
 
     using SignedSafeMath for int256;
     using Int96SafeMath for int96;
 
-    struct UserAllocation {
+    struct UserFlowData {
         int96 userToValveFlowRate;
-        mapping(address => int96) allocations;
-    }
-    struct UpdateValveToPipeData {
-        bool hasAgreement;
-        address pipeAddress;
-        int96 percentage;
-        int96 newUserToValveFlowRate;
-        address sender;
-        ISuperToken token;
-        address agreementClass;
-        bytes ctx;
+        mapping(address => int96) pipeOutflowRates;
     }
 
     ISuperfluid private host;
     IConstantFlowAgreementV1 public cfa; // private
     ISuperToken public acceptedToken; // private
 
+    int96 public valveInflowRate;
     address[] public validPipeAddresses; // private
-    mapping(address => int96) public superValveToPipeFlowRates; // private
-    mapping(address => UserAllocation) public userAllocations; // private
+    mapping(address => UserFlowData) public userFlowData; // private
 
     constructor(
         ISuperfluid _host,
@@ -71,7 +62,10 @@ contract SuperValve is SuperAppBase, AccessControl {
             validPipeAddresses.push(initialPipeAddresses[i]);
         }
 
-        uint256 configWord = SuperAppDefinitions.APP_LEVEL_FINAL | SuperAppDefinitions.BEFORE_AGREEMENT_TERMINATED_NOOP;
+        uint256 configWord = SuperAppDefinitions.APP_LEVEL_FINAL |
+            SuperAppDefinitions.BEFORE_AGREEMENT_CREATED_NOOP |
+            SuperAppDefinitions.BEFORE_AGREEMENT_UPDATED_NOOP |
+            SuperAppDefinitions.BEFORE_AGREEMENT_TERMINATED_NOOP;
 
         host.registerApp(configWord);
     }
@@ -95,7 +89,7 @@ contract SuperValve is SuperAppBase, AccessControl {
         IPipe pipe = IPipe(_pipeAddress);
         (, int96 flowRate, , ) = cfa.getFlow(acceptedToken, address(this), _pipeAddress);
 
-        int96 previousFlowRate = getUserPipeFlowRate(msg.sender, _pipeAddress);
+        int96 previousFlowRate = userFlowData[msg.sender].pipeOutflowRates[_pipeAddress];
         if (pipe.totalWithdrawableBalance(msg.sender, previousFlowRate) > 0) {
             // update the valveToPipeData in IPipe (same flow rate, but need to calculate total flow
             // before withdrawal)
@@ -105,29 +99,14 @@ contract SuperValve is SuperAppBase, AccessControl {
         }
     }
 
-    /**
-     * @dev Returns a * b / c.
-     */
-    function mulDiv(
-        int96 a,
-        int96 b,
-        int96 c
-    ) internal pure returns (int96) {
-        return int96(int256(a).mul(int256(b)).div(int256(c)));
-    }
-
-    function getUserPipeFlowRate(address _user, address _pipe) public view returns (int96) {
-        (, int96 userToValveFlow, , ) = cfa.getFlow(acceptedToken, _user, address(this));
-        int96 pipeAllocationPercentage = userAllocations[_user].allocations[_pipe];
-        return mulDiv(userToValveFlow, pipeAllocationPercentage, ONE_HUNDRED_PERCENT);
-    }
-
     function getValidPipeAddresses() public view returns (address[] memory) {
         return validPipeAddresses;
     }
 
-    function getSender(bytes calldata _ctx) internal view returns (address sender) {
+    function getSenderAndPipeAddress(bytes calldata _ctx) internal view returns (address sender, address pipeAddress) {
         sender = host.decodeCtx(_ctx).msgSender;
+        bytes memory userData = host.decodeCtx(_ctx).userData;
+        (pipeAddress) = abi.decode(userData, (address));
     }
 
     /** @dev Allow the admin role (the deployer of the contract), to add valid pipe addresses. */
@@ -151,26 +130,6 @@ contract SuperValve is SuperAppBase, AccessControl {
         validPipeAddresses.pop();
     }
 
-    /** @dev Checks before create of an agreement. */
-    function _beforeCreateFlowToPipe(bytes calldata _ctx) private view returns (bytes memory cbdata) {
-        address sender = getSender(_ctx);
-        isFullyAllocated(sender);
-        return new bytes(0);
-    }
-
-    /** @dev Checks before update of an agreement. */
-    function _beforeUpdateFlowToPipe(bytes32 _agreementId, bytes calldata _ctx)
-        private
-        view
-        returns (bytes memory cbdata)
-    {
-        address sender = getSender(_ctx);
-        isFullyAllocated(sender);
-        (, int96 newUserToValveFlowRate, , ) = cfa.getFlowByID(acceptedToken, _agreementId);
-        require(newUserToValveFlowRate > 0, "SuperValve: There is no flow coming in.");
-        return new bytes(0);
-    }
-
     /**************************************************************************
      * User Functions
      *************************************************************************/
@@ -180,8 +139,16 @@ contract SuperValve is SuperAppBase, AccessControl {
         return flowRate;
     }
 
-    function getValveFlowRate() external view returns (int96) {
+    function getValveInflowRate() external view returns (int96) {
         return cfa.getNetFlow(acceptedToken, address(this));
+    }
+
+    function getValveToPipeFlowRate(address _pipe) public view returns (int96) {
+        if (!isValidPipeAddress(_pipe)) {
+            return 0;
+        }
+        (, int96 valveToPipeFlowRate, , ) = cfa.getFlow(acceptedToken, address(this), _pipe);
+        return valveToPipeFlowRate;
     }
 
     /**************************************************************************
@@ -191,195 +158,93 @@ contract SuperValve is SuperAppBase, AccessControl {
      * We will update the state to reflect the new flow rate from the SuperValve to the Pipe as well
      * as the users' updated allocation data.
      */
-    function _updateValveToPipeFlow(UpdateValveToPipeData memory data)
+    function _updateValveToPipeFlow(address _agreementClass, bytes calldata _ctx)
         internal
-        validPipeAddress(data.pipeAddress)
         returns (bytes memory newCtx)
     {
-        newCtx = data.ctx;
-        int96 percentage = data.percentage;
-        address pipeAddress = data.pipeAddress;
-        require(
-            percentage >= 0 && percentage <= ONE_HUNDRED_PERCENT,
-            "SuperValve: Your percentage is outside of the acceptable range."
-        );
+        newCtx = _ctx;
 
-        // get the old userToPipe flow rate
-        int96 oldUserToPipeFlowRate = mulDiv(
-            userAllocations[data.sender].userToValveFlowRate,
-            percentage,
-            ONE_HUNDRED_PERCENT
-        );
+        (address sender, address pipeAddress) = getSenderAndPipeAddress(_ctx);
 
         // update the user flow withdraw data in Pipe for accounting purposes
-        IPipe(pipeAddress).setUserFlowWithdrawData(data.sender, oldUserToPipeFlowRate);
+        IPipe(pipeAddress).setUserFlowWithdrawData(sender, userFlowData[sender].pipeOutflowRates[pipeAddress]);
 
-        // get and set the new userToPipe flow rate
-        int96 newUserToPipeFlowRate = mulDiv(percentage, data.newUserToValveFlowRate, ONE_HUNDRED_PERCENT);
+        if (!isValidPipeAddress(pipeAddress)) {
+            return newCtx;
+        }
 
-        // get the new total flow rate from valveToPipe given the users' updated flow rate
-        int96 newValveToPipeFlowRate = superValveToPipeFlowRates[pipeAddress]
-        .sub(oldUserToPipeFlowRate, "Int96 Error: Could not subtract.")
-        .add(newUserToPipeFlowRate, "Int96 Error: Could not add.");
+        int96 newInflowRate = cfa.getNetFlow(acceptedToken, address(this));
+        int96 flowRateDifference = newInflowRate - valveInflowRate;
 
-        // update the valveToPipe flow rate
-        superValveToPipeFlowRates[pipeAddress] = newValveToPipeFlowRate;
+        if (flowRateDifference == 0) return newCtx;
 
-        // update the valveToPipeData in IPipe
-        IPipe(data.pipeAddress).setPipeFlowData(newValveToPipeFlowRate);
+        int96 valveToPipeFlowRate = getValveToPipeFlowRate(pipeAddress);
+        int96 newValveToPipeFlowRate = valveToPipeFlowRate + flowRateDifference;
 
-        // TODO: it is a possible event that newValveToPipeFlowRate is 0 if users stop their flow to the pipe.
-        // update the flow agreement between SuperValve and Pipe
-        (newCtx, ) = host.callAgreementWithContext(
-            ISuperAgreement(data.agreementClass),
-            abi.encodeWithSelector(
-                data.hasAgreement ? cfa.updateFlow.selector : cfa.createFlow.selector,
-                data.token,
-                pipeAddress,
-                newValveToPipeFlowRate,
-                new bytes(0) // placeholder
-            ),
-            "0x",
-            newCtx
-        );
-    }
+        IPipe(pipeAddress).setPipeFlowData(newValveToPipeFlowRate);
 
-    /** @dev Updates the valveToPipe flowRate when a user chooses to remove their flow rate.
-     * We update the local state to reflect the new flow rate from the SuperValve to the pipe as well as removing
-     * the users' allocations.
-     */
-    function _stopFlowToPipe(
-        address _pipeAddress,
-        address _sender,
-        address _agreementClass,
-        bytes calldata _ctx
-    ) internal returns (bytes memory newCtx) {
-        newCtx = _ctx;
-        // get the previous userToPipeFlowRate
-        int96 oldUserToPipeFlowRate = mulDiv(
-            userAllocations[_sender].userToValveFlowRate,
-            userAllocations[_sender].allocations[_pipeAddress],
-            ONE_HUNDRED_PERCENT
-        );
-
-        // update the user flow withdraw data in pipe for accounting purposes
-        IPipe(_pipeAddress).setUserFlowWithdrawData(_sender, oldUserToPipeFlowRate);
-
-        // get the new total flow rate from valveToPipe given the users flow rate is 0 now
-        int96 newValveToPipeFlowRate = superValveToPipeFlowRates[_pipeAddress].sub(
-            oldUserToPipeFlowRate,
-            "Int96 Error: Could not subtract."
-        );
-
-        // remove users' allocations to the pipe at _pipeAddress TODO: use delete?
-        userAllocations[_sender].allocations[_pipeAddress] = 0;
-
-        // update the valveToPipe flow rate
-        superValveToPipeFlowRates[_pipeAddress] = newValveToPipeFlowRate;
-
-        // update the valveToPipeData in IPipe
-        IPipe(_pipeAddress).setPipeFlowData(newValveToPipeFlowRate);
-
-        // update the flow agreement between SuperValve and Pipe
-        (newCtx, ) = host.callAgreementWithContext(
-            ISuperAgreement(_agreementClass),
-            abi.encodeWithSelector(
-                cfa.updateFlow.selector,
-                acceptedToken,
-                _pipeAddress,
-                newValveToPipeFlowRate,
-                new bytes(0) // placeholder
-            ),
-            "0x",
-            newCtx
-        );
-    }
-
-    /** @dev This is called in our callback function and either creates (only once) or
-     * updates the flow between the SuperValve and a Pipe.
-     */
-    function _modifyFlowToPipes(
-        address _agreementClass,
-        bytes32 _agreementId,
-        bytes calldata _ctx
-    ) internal returns (bytes memory newCtx) {
-        newCtx = _ctx;
-        address sender = getSender(_ctx);
-
-        // get the newly created/updated userToValve flow rate
-        (, int96 newUserToValveFlowRate, , ) = cfa.getFlowByID(acceptedToken, _agreementId);
-
-        for (uint256 i; i < validPipeAddresses.length; i++) {
-            // check if an agreement exists between the SuperValve and Pipe
-            (uint256 timestamp, , , ) = cfa.getFlow(acceptedToken, address(this), validPipeAddresses[i]);
-
-            int96 percentage = userAllocations[sender].allocations[validPipeAddresses[i]];
-
-            // if the user does not want to allocate anything to the pipe and no agreement exists currently,
-            // we skip.
-            if (percentage == 0 && timestamp == 0) {
-                continue;
-            }
-
-            newCtx = _updateValveToPipeFlow(
-                UpdateValveToPipeData(
-                    timestamp > 0,
-                    validPipeAddresses[i],
-                    percentage,
-                    newUserToValveFlowRate,
-                    sender,
+        if (newValveToPipeFlowRate <= 0) {
+            (newCtx, ) = host.callAgreementWithContext(
+                ISuperAgreement(_agreementClass),
+                abi.encodeWithSelector(
+                    cfa.deleteFlow.selector,
                     acceptedToken,
-                    _agreementClass,
-                    newCtx
-                )
+                    address(this),
+                    pipeAddress,
+                    new bytes(0) // placeholder
+                ),
+                "0x",
+                newCtx
             );
+
+            userFlowData[sender].userToValveFlowRate = 0;
+            userFlowData[sender].pipeOutflowRates[pipeAddress] = 0;
+        } else if (valveToPipeFlowRate != 0) {
+            (newCtx, ) = host.callAgreementWithContext(
+                ISuperAgreement(_agreementClass),
+                abi.encodeWithSelector(
+                    cfa.updateFlow.selector,
+                    acceptedToken,
+                    pipeAddress,
+                    newValveToPipeFlowRate,
+                    new bytes(0) // placeholder
+                ),
+                "0x",
+                newCtx
+            );
+
+            userFlowData[sender].userToValveFlowRate = userFlowData[sender].userToValveFlowRate.add(
+                flowRateDifference,
+                ADD_ERROR
+            );
+            userFlowData[sender].pipeOutflowRates[pipeAddress] = userFlowData[sender].pipeOutflowRates[pipeAddress].add(
+                flowRateDifference,
+                ADD_ERROR
+            );
+        } else {
+            (newCtx, ) = host.callAgreementWithContext(
+                ISuperAgreement(_agreementClass),
+                abi.encodeWithSelector(
+                    cfa.createFlow.selector,
+                    acceptedToken,
+                    pipeAddress,
+                    newValveToPipeFlowRate,
+                    new bytes(0) // placeholder
+                ),
+                "0x",
+                newCtx
+            );
+
+            userFlowData[sender].userToValveFlowRate = flowRateDifference;
+            userFlowData[sender].pipeOutflowRates[pipeAddress] = flowRateDifference;
         }
 
-        // update the userToValve flow rate to the newly created/updated one
-        if (userAllocations[sender].userToValveFlowRate != newUserToValveFlowRate) {
-            userAllocations[sender].userToValveFlowRate = newUserToValveFlowRate;
-        }
-    }
-
-    /** @dev This is called in our callback function when a user terminates their agreement with the
-     * SuperValve.
-     */
-    function _stopFlowToPipes(address _agreementClass, bytes calldata _ctx) internal returns (bytes memory newCtx) {
-        newCtx = _ctx;
-        address sender = getSender(_ctx);
-
-        for (uint256 i; i < validPipeAddresses.length; i++) {
-            // if the user has no flow to the pipe, we skip
-
-            bool hasFlowToCurrentPipe = getUserPipeFlowRate(sender, validPipeAddresses[i]) > 0;
-            if (!hasFlowToCurrentPipe) {
-                continue;
-            }
-            newCtx = _stopFlowToPipe(validPipeAddresses[i], sender, _agreementClass, _ctx);
-        }
-
-        // set the userToValve flow rate equal to 0
-        userAllocations[sender].userToValveFlowRate = 0;
+        valveInflowRate = newInflowRate;
     }
 
     /**************************************************************************
      * Super App Callbacks
      *************************************************************************/
-
-    /**
-     * @dev Before we create the agreement, we need to ensure that the user has actually set their allocations
-     * as well as actually having a flow rate that is greater than 0.
-     */
-    function beforeAgreementCreated(
-        ISuperToken _token,
-        address _agreementClass,
-        bytes32, // _agreementId
-        bytes calldata, // _agreementData
-        bytes calldata _ctx
-    ) external view override onlyHost onlyExpected(_token, _agreementClass) returns (bytes memory cbdata) {
-        cbdata = _beforeCreateFlowToPipe(_ctx);
-    }
-
     /**
      * @dev After the user starts flowing funds into the SuperValve, we redirect these flows through the
      * various pipes to the vaults accordingly based on the users selection vaults (pipes) in setupFlows.
@@ -387,26 +252,12 @@ contract SuperValve is SuperAppBase, AccessControl {
     function afterAgreementCreated(
         ISuperToken _token,
         address _agreementClass,
-        bytes32 _agreementId,
+        bytes32, // _agreementId,
         bytes calldata, // _agreementData
         bytes calldata, // _cbdata
         bytes calldata _ctx
     ) external override onlyHost onlyExpected(_token, _agreementClass) returns (bytes memory newCtx) {
-        newCtx = _modifyFlowToPipes(_agreementClass, _agreementId, _ctx);
-    }
-
-    /**
-     * @dev Before we update the agreement, we need to ensure that the user has actually set their allocations
-     * as well as actually having a flow rate that is greater than 0.
-     */
-    function beforeAgreementUpdated(
-        ISuperToken _token,
-        address _agreementClass,
-        bytes32 _agreementId,
-        bytes calldata, // _agreementData
-        bytes calldata _ctx
-    ) external view override onlyHost onlyExpected(_token, _agreementClass) returns (bytes memory cbdata) {
-        cbdata = _beforeUpdateFlowToPipe(_agreementId, _ctx);
+        newCtx = _updateValveToPipeFlow(_agreementClass, _ctx);
     }
 
     /** @dev If the user updates their flow rates or the proportion that go into the different flows, then we
@@ -415,20 +266,12 @@ contract SuperValve is SuperAppBase, AccessControl {
     function afterAgreementUpdated(
         ISuperToken _token,
         address _agreementClass,
-        bytes32 _agreementId,
+        bytes32, // _agreementId,
         bytes calldata, // _agreementData
         bytes calldata, // _cbdata
         bytes calldata _ctx
     ) external override onlyHost onlyExpected(_token, _agreementClass) returns (bytes memory newCtx) {
-        newCtx = _modifyFlowToPipes(_agreementClass, _agreementId, _ctx);
-    }
-
-    /** @dev Checks before termination of an agreement. */
-    function _beforeStopFlowToPipe(bytes calldata _ctx) private view returns (bytes memory cbdata) {
-        address sender = getSender(_ctx);
-        (, int96 totalFlow, , ) = cfa.getFlow(acceptedToken, sender, address(this));
-        require(totalFlow > 0, "SuperValve: You don't have any flows to stop.");
-        return new bytes(0);
+        newCtx = _updateValveToPipeFlow(_agreementClass, _ctx);
     }
 
     /** @dev If the user removes their flow rates, we will update the state accordingly.
@@ -444,7 +287,7 @@ contract SuperValve is SuperAppBase, AccessControl {
         if (_token != acceptedToken) {
             return _ctx;
         }
-        newCtx = _stopFlowToPipes(_agreementClass, _ctx);
+        newCtx = _updateValveToPipeFlow(_agreementClass, _ctx);
     }
 
     /**************************************************************************
@@ -459,17 +302,6 @@ contract SuperValve is SuperAppBase, AccessControl {
         return
             ISuperAgreement(_agreementClass).agreementType() ==
             keccak256("org.superfluid-finance.agreements.ConstantFlowAgreement.v1");
-    }
-
-    function isFullyAllocated(address _sender) public view {
-        int96 totalPercentage;
-        for (uint256 i; i < validPipeAddresses.length; i++) {
-            totalPercentage = totalPercentage.add(
-                userAllocations[_sender].allocations[validPipeAddresses[i]],
-                "Int96 Error: Could not add."
-            );
-        }
-        require(totalPercentage == ONE_HUNDRED_PERCENT, "SuperValve: Your flows don't add up to 100%.");
     }
 
     function isValidPipeAddress(address _pipeAddress) internal view returns (bool) {
