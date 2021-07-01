@@ -24,23 +24,14 @@ import { Int96SafeMath } from "@superfluid-finance/ethereum-contracts/contracts/
 /// gas limit on a callback.
 /// Certain variables are set to public for testing purposes.
 contract SuperValve is SuperAppBase, AccessControl {
-    int96 private constant ONE_HUNDRED_PERCENT = 1000;
     bytes32 private constant ADMIN = keccak256("ADMIN");
 
     using SignedSafeMath for int256;
     using Int96SafeMath for int96;
 
-    struct PipeFlowData {
-        int96 percentage; // percentage will be between 0 and 1000 (allows one decimal place of contrast)
-        address pipeAddress;
-    }
-    struct Allocation {
-        int96 flowRate;
-        int96 percentage;
-    }
     struct UserAllocation {
-        mapping(address => int96) allocations; // allocation %'s
-        uint256 userPipeFlowId;
+        int96 userToValveFlowRate;
+        mapping(address => int96) allocations;
     }
     struct UpdateValveToPipeData {
         bool hasAgreement;
@@ -128,11 +119,7 @@ contract SuperValve is SuperAppBase, AccessControl {
     function getUserPipeFlowRate(address _user, address _pipe) public view returns (int96) {
         (, int96 userToValveFlow, , ) = cfa.getFlow(acceptedToken, _user, address(this));
         int96 pipeAllocationPercentage = userAllocations[_user].allocations[_pipe];
-        return
-            userToValveFlow.mul(pipeAllocationPercentage, "Int96 Error: Could not multiply.").div(
-                ONE_HUNDRED_PERCENT,
-                "Int96 Error: Could not divide."
-            );
+        return mulDiv(userToValveFlow, pipeAllocationPercentage, ONE_HUNDRED_PERCENT);
     }
 
     function getValidPipeAddresses() public view returns (address[] memory) {
@@ -188,22 +175,6 @@ contract SuperValve is SuperAppBase, AccessControl {
      * User Functions
      *************************************************************************/
 
-    /**
-     * @dev Users will call this to set and update their flowData.
-     */
-    function setUserFlowData(PipeFlowData[] memory _pipeFlowData) public {
-        require(
-            validPipeAddresses.length == _pipeFlowData.length,
-            "SuperValve: Your number of allocations is incorrect."
-        );
-        // TODO: we need to do a check for whether or not pipe address is valid
-        // previous logic here was faulty.
-        for (uint256 i; i < validPipeAddresses.length; i++) {
-            userAllocations[msg.sender].allocations[_pipeFlowData[i].pipeAddress] = _pipeFlowData[i].percentage;
-        }
-        isFullyAllocated(msg.sender);
-    }
-
     function getUserFlowRate() external view returns (int96) {
         (, int96 flowRate, , ) = cfa.getFlow(acceptedToken, msg.sender, address(this));
         return flowRate;
@@ -233,9 +204,12 @@ contract SuperValve is SuperAppBase, AccessControl {
             "SuperValve: Your percentage is outside of the acceptable range."
         );
 
-        // get the old userToPipe flow rate, when we first create a flow, we must use 0 otherwise
-        // newValveToPipeFlowRate is equal to 0
-        int96 oldUserToPipeFlowRate = data.hasAgreement ? getUserPipeFlowRate(data.sender, pipeAddress) : 0;
+        // get the old userToPipe flow rate
+        int96 oldUserToPipeFlowRate = mulDiv(
+            userAllocations[data.sender].userToValveFlowRate,
+            percentage,
+            ONE_HUNDRED_PERCENT
+        );
 
         // update the user flow withdraw data in Pipe for accounting purposes
         IPipe(pipeAddress).setUserFlowWithdrawData(data.sender, oldUserToPipeFlowRate);
@@ -282,7 +256,11 @@ contract SuperValve is SuperAppBase, AccessControl {
     ) internal returns (bytes memory newCtx) {
         newCtx = _ctx;
         // get the previous userToPipeFlowRate
-        int96 oldUserToPipeFlowRate = getUserPipeFlowRate(_sender, _pipeAddress);
+        int96 oldUserToPipeFlowRate = mulDiv(
+            userAllocations[_sender].userToValveFlowRate,
+            userAllocations[_sender].allocations[_pipeAddress],
+            ONE_HUNDRED_PERCENT
+        );
 
         // update the user flow withdraw data in pipe for accounting purposes
         IPipe(_pipeAddress).setUserFlowWithdrawData(_sender, oldUserToPipeFlowRate);
@@ -293,7 +271,7 @@ contract SuperValve is SuperAppBase, AccessControl {
             "Int96 Error: Could not subtract."
         );
 
-        // remove users' allocations to the pipe at _pipeAddress
+        // remove users' allocations to the pipe at _pipeAddress TODO: use delete?
         userAllocations[_sender].allocations[_pipeAddress] = 0;
 
         // update the valveToPipe flow rate
@@ -356,6 +334,11 @@ contract SuperValve is SuperAppBase, AccessControl {
                 )
             );
         }
+
+        // update the userToValve flow rate to the newly created/updated one
+        if (userAllocations[sender].userToValveFlowRate != newUserToValveFlowRate) {
+            userAllocations[sender].userToValveFlowRate = newUserToValveFlowRate;
+        }
     }
 
     /** @dev This is called in our callback function when a user terminates their agreement with the
@@ -374,6 +357,9 @@ contract SuperValve is SuperAppBase, AccessControl {
             }
             newCtx = _stopFlowToPipe(validPipeAddresses[i], sender, _agreementClass, _ctx);
         }
+
+        // set the userToValve flow rate equal to 0
+        userAllocations[sender].userToValveFlowRate = 0;
     }
 
     /**************************************************************************

@@ -5,10 +5,11 @@ const func: DeployFunction = async (hre: HardhatRuntimeEnvironment) => {
     const { deployments, getNamedAccounts } = hre;
     const { deployer } = await getNamedAccounts();
     const { deploy } = deployments;
+    const fUSDC = "0xbe49ac1eadac65dccf204d4df81d650b50122ab2";
 
     await deploy("FakeVault", {
         from: deployer,
-        args: ["0x0f1d7c55a2b133e000ea10eec03c774e0d6796e8", "fUSDC Vault 1 TOKEN", "vFUSDC1"],
+        args: [fUSDC, "fUSDC Vault 1 TOKEN", "vFUSDC1"],
         log: true,
     });
 };

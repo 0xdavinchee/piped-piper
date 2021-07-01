@@ -6,10 +6,11 @@ const func: DeployFunction = async (hre: HardhatRuntimeEnvironment) => {
     const { deployer } = await getNamedAccounts();
     const { deploy } = deployments;
     const fakeVault = await deployments.get("FakeVault");
+    const fUSDC = "0xbe49ac1eadac65dccf204d4df81d650b50122ab2";
 
     await deploy("VaultPipe", {
         from: deployer,
-        args: ["0x0f1d7c55a2b133e000ea10eec03c774e0d6796e8", fakeVault.address],
+        args: [fUSDC, fakeVault.address],
         log: true,
     });
 };

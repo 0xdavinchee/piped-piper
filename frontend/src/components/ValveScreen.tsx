@@ -39,6 +39,7 @@ const Valve = (props: IValveProps) => {
     const [userPipeData, setUserPipeData] = useState<IUserPipeData[]>([
         ...PIPES.map(x => ({ pipeAddress: x.pipeAddress, name: x.name, percentage: "" })),
     ]);
+    const [pipeAddresses, setPipeAddresses] = useState<string[]>([]);
     const [sf, setSf] = useState<any>(); // TODO: move this to PipedPiper.tsx so nav has access to this as well
     const [hasAllocations, setHasAllocations] = useState(false);
     const ethereum = (window as any).ethereum;
@@ -78,7 +79,7 @@ const Valve = (props: IValveProps) => {
         }
     };
     const createOrUpdateFlow = async () => {
-        if (userFlowRate) {
+        if (Number(userFlowRate) > 0) {
             await updateFlow();
         } else {
             await createFlow();
@@ -115,6 +116,34 @@ const Valve = (props: IValveProps) => {
             console.error(error);
         }
     };
+
+    const deleteFlow = async () => {
+        if (!sf || !token) return;
+        try {
+            const txn = await sf.cfa.deleteFlow({
+                superToken: token,
+                sender: props.userAddress,
+                receiver: address,
+            });
+            await txn.wait();
+            await getAndSetFlowData(token);
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
+    const withdrawFunds = async () => {
+        const contract = initializeContract(true, address);
+        if (!contract || !token || pipeAddresses.length === 0) return;
+        try {
+            const txn = await contract.withdraw(pipeAddresses);
+            await txn.wait();
+            await getAndSetFlowData(token);
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
     const getFlowRateText = (flowRate: string) => {
         return flowRate + " " + props.currency + " / second";
     };
@@ -164,6 +193,9 @@ const Valve = (props: IValveProps) => {
             });
             await superfluidFramework.initialize();
             setSf(superfluidFramework);
+
+            const pipeAddresses = await contract.getValidPipeAddresses();
+            setPipeAddresses(pipeAddresses);
 
             const token = await contract.acceptedToken();
             setToken(token);
@@ -259,7 +291,25 @@ const Valve = (props: IValveProps) => {
                                 variant="contained"
                                 onClick={() => createOrUpdateFlow()}
                             >
-                                {userFlowRate ? "Update" : "Create"} Flow
+                                {Number(userFlowRate) > 0 ? "Update" : "Create"} Flow
+                            </Button>
+                            <Button
+                                className="button flow-button"
+                                color="primary"
+                                disabled={false} // TODO: check if withdrawable balance > 0
+                                variant="contained"
+                                onClick={() => withdrawFunds()}
+                            >
+                                Withdraw
+                            </Button>
+                            <Button
+                                className="button flow-button"
+                                color="secondary"
+                                disabled={!userFlowRate}
+                                variant="contained"
+                                onClick={() => deleteFlow()}
+                            >
+                                Delete Flow
                             </Button>
                         </div>
                     </div>
