@@ -30,9 +30,17 @@ contract SuperValve is SuperAppBase, AccessControl {
     using SignedSafeMath for int256;
     using Int96SafeMath for int96;
 
+    struct UserToPipeFlowData {
+        uint256 vaultWithdrawnAmount;
+        uint256 flowUpdatedTimestamp;
+        int256 flowAmountSinceUpdate;
+        int256 totalFlowedToPipe;
+        int96 flowRate;
+    }
+
     struct UserFlowData {
         int96 userToValveFlowRate;
-        mapping(address => int96) pipeOutflowRates;
+        mapping(address => UserToPipeFlowData) pipeOutflowRates;
     }
 
     ISuperfluid private host;
@@ -89,7 +97,7 @@ contract SuperValve is SuperAppBase, AccessControl {
         IPipe pipe = IPipe(_pipeAddress);
         (, int96 flowRate, , ) = cfa.getFlow(acceptedToken, address(this), _pipeAddress);
 
-        int96 previousFlowRate = userFlowData[msg.sender].pipeOutflowRates[_pipeAddress];
+        int96 previousFlowRate = userFlowData[msg.sender].pipeOutflowRates[_pipeAddress].flowRate;
         if (pipe.totalWithdrawableBalance(msg.sender, previousFlowRate) > 0) {
             // update the valveToPipeData in IPipe (same flow rate, but need to calculate total flow
             // before withdrawal)
@@ -167,7 +175,7 @@ contract SuperValve is SuperAppBase, AccessControl {
         (address sender, address pipeAddress) = getSenderAndPipeAddress(_ctx);
 
         // update the user flow withdraw data in Pipe for accounting purposes
-        IPipe(pipeAddress).setUserFlowWithdrawData(sender, userFlowData[sender].pipeOutflowRates[pipeAddress]);
+        IPipe(pipeAddress).setUserFlowWithdrawData(sender, userFlowData[sender].pipeOutflowRates[pipeAddress].flowRate);
 
         if (!isValidPipeAddress(pipeAddress)) {
             return newCtx;
@@ -198,7 +206,7 @@ contract SuperValve is SuperAppBase, AccessControl {
             );
 
             userFlowData[sender].userToValveFlowRate = 0;
-            userFlowData[sender].pipeOutflowRates[pipeAddress] = 0;
+            userFlowData[sender].pipeOutflowRates[pipeAddress].flowRate = 0;
         } else if (valveToPipeFlowRate != 0) {
             (newCtx, ) = host.callAgreementWithContext(
                 ISuperAgreement(_agreementClass),
@@ -217,10 +225,10 @@ contract SuperValve is SuperAppBase, AccessControl {
                 flowRateDifference,
                 ADD_ERROR
             );
-            userFlowData[sender].pipeOutflowRates[pipeAddress] = userFlowData[sender].pipeOutflowRates[pipeAddress].add(
-                flowRateDifference,
-                ADD_ERROR
-            );
+            userFlowData[sender].pipeOutflowRates[pipeAddress].flowRate = userFlowData[sender]
+            .pipeOutflowRates[pipeAddress]
+            .flowRate
+            .add(flowRateDifference, ADD_ERROR);
         } else {
             (newCtx, ) = host.callAgreementWithContext(
                 ISuperAgreement(_agreementClass),
@@ -236,7 +244,7 @@ contract SuperValve is SuperAppBase, AccessControl {
             );
 
             userFlowData[sender].userToValveFlowRate = flowRateDifference;
-            userFlowData[sender].pipeOutflowRates[pipeAddress] = flowRateDifference;
+            userFlowData[sender].pipeOutflowRates[pipeAddress].flowRate = flowRateDifference;
         }
 
         valveInflowRate = newInflowRate;
