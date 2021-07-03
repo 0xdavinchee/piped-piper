@@ -9,7 +9,7 @@ const func: DeployFunction = async (hre: HardhatRuntimeEnvironment) => {
 
     await deploy("FakeVault", {
         from: deployer,
-        args: [fUSDC, "fUSDC Vault 1 TOKEN", "vFUSDC1"],
+        args: [fUSDC, "fUSDC Vault 2 TOKEN", "vFUSDC2"],
         log: true,
     });
 };

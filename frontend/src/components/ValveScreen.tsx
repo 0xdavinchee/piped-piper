@@ -2,8 +2,8 @@ import { Button, Card, CardContent, CircularProgress, Container, TextField, Typo
 import SuperfluidSDK from "@superfluid-finance/js-sdk";
 import { Web3Provider } from "@ethersproject/providers";
 import { useParams } from "react-router-dom";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { initializeContract, requestAccount } from "../utils/helpers";
+import { useEffect, useMemo, useState } from "react";
+import { initializeContract } from "../utils/helpers";
 import { IPipeData, IUserPipeData } from "../utils/interfaces";
 import VaultPipeCard from "./VaultPipeCard";
 import { ethers } from "ethers";
@@ -13,35 +13,48 @@ interface IValveProps {
     readonly userAddress: string;
 }
 
-// TODO: there is no easy way to get array data directly via ethereum - subgraph may be needed for this
-// you can only get one element at a time.
+interface IFlowData {
+    readonly flowRate: string;
+    readonly receiver: string;
+    readonly sender: string;
+}
 
 // TODO: this should come from on chain, that is, a subgraph which gets us a list of the valid
 // vault pipe addresses, in addition, we should probably have name and stuff on the VaultPipe contract.
-
-// TODO: Cannot redirect streams to multiple pipes only one.
-// Cannot update flow to higher amount currently.
+// TODO: figure out why we cannot stop flows - why isn't this wokring.
+const PIPE_1 = "0xFC442a90Ee183e458685dE683D8dc69D574aD22D";
+const PIPE_2 = "0xC102B7aF4f7caE096675e64ea71f8CEe33b8e975";
 const PIPES: IPipeData[] = [
-    // { pipeAddress: "0xe28f4e47ab14d2debe741781761798f557f16c91", name: "fUSDC Vault 1" },
-    { pipeAddress: "0x79a42886aFd9ab2028e95262e7044263e6D29c6e", name: "fUSDC Vault 2" },
+    { pipeAddress: PIPE_1, name: "fUSDC Vault 1" },
+    { pipeAddress: PIPE_2, name: "fUSDC Vault 2" },
 ];
 const FULLY_ALLOCATED = 100;
 
 const Valve = (props: IValveProps) => {
     const { address }: { address: string } = useParams();
+    // Misc State
     const [loading, setLoading] = useState(true);
     const [time, setTime] = useState(new Date());
+
+    // Superfluid State
+    const [sf, setSf] = useState<any>(); // TODO: move this to PipedPiper.tsx so nav has access to this as well
     const [token, setToken] = useState("");
-    const [inputFlowRate, setInputFlowRate] = useState("");
-    const [userFlowRate, setUserFlowRate] = useState("");
+
+    // Valve Flow State
     const [valveFlowRate, setValveFlowRate] = useState("");
     const [numInflows, setNumInflows] = useState(0);
+
+    // User Flow State
+    const [inputFlowRate, setInputFlowRate] = useState("");
+    const [userFlowRate, setUserFlowRate] = useState("");
     const [userPipeData, setUserPipeData] = useState<IUserPipeData[]>([
         ...PIPES.map(x => ({ pipeAddress: x.pipeAddress, name: x.name, percentage: "" })),
     ]);
+    const [userTotalFlowedBalance, setUserTotalFlowedBalance] = useState({
+        totalFlowed: 0,
+        timestamp: 0,
+    });
     const [pipeAddresses, setPipeAddresses] = useState<string[]>([]);
-    const [sf, setSf] = useState<any>(); // TODO: move this to PipedPiper.tsx so nav has access to this as well
-    const [hasAllocations, setHasAllocations] = useState(false);
     const ethereum = (window as any).ethereum;
 
     const handleUpdateAllocation = (percentage: string, index: number) => {
@@ -50,34 +63,41 @@ const Valve = (props: IValveProps) => {
     };
 
     const getAndSetFlowData = async (tokenAddress: string) => {
-        const netFlow = await sf.cfa.getNetFlow({ superToken: tokenAddress, account: address });
-        const inflowData = await sf.cfa.listFlows({ superToken: tokenAddress, account: address, onlyInFlows: true });
-        const flowData = await sf.cfa.getFlow({
+        const valveFlowData: { inFlows: IFlowData[]; outFlows: IFlowData[] } = await sf.cfa.listFlows({
+            superToken: tokenAddress,
+            account: address,
+        });
+        const userToValveFlowData = await sf.cfa.getFlow({
             superToken: tokenAddress,
             sender: props.userAddress,
             receiver: address,
         });
-        setNumInflows(inflowData.inFlows.length);
-        setValveFlowRate(ethers.utils.formatUnits(netFlow));
-        setUserFlowRate(ethers.utils.formatUnits(flowData.flowRate));
+
+        const valveFlowRate = sumFlows(valveFlowData.inFlows);
+
+        setNumInflows(valveFlowData.inFlows.length);
+        setValveFlowRate(ethers.utils.formatUnits(valveFlowRate));
+        setUserFlowRate(ethers.utils.formatUnits(userToValveFlowData.flowRate));
     };
 
-    const createAllocation = async () => {
-        const contract = initializeContract(true, address);
-        if (!contract || !token) return;
-        try {
-            const data = userPipeData.map(x => ({
-                pipeAddress: x.pipeAddress,
-                percentage: formatPercentage(x.percentage),
-            }));
-            await requestAccount();
-            const txn = await contract.setUserFlowData(data);
-            await txn.wait();
-            await getAndSetFlowData(token);
-        } catch (error) {
-            console.error(error);
-        }
+    const getRelevantFlowData = async (sf: any, tokenAddress: string) => {
+        if (sf == null) return;
+        const inflowData = await sf.cfa.listFlows({ superToken: tokenAddress, account: props.userAddress });
+        console.log("inflowData", inflowData);
+        const flowData1 = await sf.cfa.getFlow({
+            superToken: tokenAddress,
+            sender: address,
+            receiver: PIPE_1,
+        });
+        const flowData2 = await sf.cfa.getFlow({
+            superToken: tokenAddress,
+            sender: address,
+            receiver: PIPE_2,
+        });
+        console.log("flowData1", flowData1);
+        console.log("flowData2", flowData2);
     };
+
     const createOrUpdateFlow = async () => {
         if (Number(userFlowRate) > 0) {
             await updateFlow();
@@ -85,17 +105,37 @@ const Valve = (props: IValveProps) => {
             await createFlow();
         }
     };
+
+    const sumFlows = (flows: IFlowData[]) => flows.map(x => Number(x.flowRate)).reduce((x, y) => x + y, 0);
+
+    const getCreateUpdateFlowUserData = () => {
+        const encoder = ethers.utils.defaultAbiCoder;
+        return encoder.encode(
+            ["address[]", "int96[]"],
+            [userPipeData.map(x => x.pipeAddress), userPipeData.map(x => formatPercentage(x.percentage))],
+        );
+    };
+
+    const getDeleteFlowUserData = () => {
+        const encoder = ethers.utils.defaultAbiCoder;
+        return encoder.encode(
+            ["address[]", "int96[]"],
+            [userPipeData.map(x => x.pipeAddress), userPipeData.map(x => formatPercentage("0"))],
+        );
+    };
+
     const createFlow = async () => {
         if (!sf || !token) return;
         try {
-            const txn = await sf.cfa.createFlow({
+            await sf.cfa.createFlow({
                 superToken: token,
                 sender: props.userAddress,
                 receiver: address,
                 flowRate: getFlowRate(inputFlowRate),
+                userData: getCreateUpdateFlowUserData(),
             });
-            await txn.wait();
             await getAndSetFlowData(token);
+            await getRelevantFlowData(sf, token);
         } catch (error) {
             console.error(error);
         }
@@ -104,13 +144,13 @@ const Valve = (props: IValveProps) => {
     const updateFlow = async () => {
         if (!sf || !token) return;
         try {
-            const txn = await sf.cfa.updateFlow({
+            await sf.cfa.updateFlow({
                 superToken: token,
                 sender: props.userAddress,
                 receiver: address,
                 flowRate: getFlowRate(inputFlowRate),
+                userData: getCreateUpdateFlowUserData(),
             });
-            await txn.wait();
             await getAndSetFlowData(token);
         } catch (error) {
             console.error(error);
@@ -120,12 +160,12 @@ const Valve = (props: IValveProps) => {
     const deleteFlow = async () => {
         if (!sf || !token) return;
         try {
-            const txn = await sf.cfa.deleteFlow({
+            await sf.cfa.deleteFlow({
                 superToken: token,
                 sender: props.userAddress,
                 receiver: address,
+                userData: getDeleteFlowUserData(),
             });
-            await txn.wait();
             await getAndSetFlowData(token);
         } catch (error) {
             console.error(error);
@@ -154,7 +194,7 @@ const Valve = (props: IValveProps) => {
      * @param x the percentage the user wants to format
      * @returns
      */
-    const formatPercentage = (x: string) => Number(Number(x).toFixed(1)) * 10;
+    const formatPercentage = (x: string) => Math.round(Number(x));
 
     const getFlowRate = (x: string) => {
         const days = 30;
@@ -165,6 +205,17 @@ const Valve = (props: IValveProps) => {
         return Math.round((Number(x) / denominator) * 10 ** 18);
     };
 
+    /** Get the total user flowed balance:
+     * The current user total flowed balance calculated on chain +
+     * the difference between now and when we got this information * the user flow rate.
+     */
+    const totalUserFlowedBalance = useMemo(() => {
+        console.log("test", userTotalFlowedBalance.timestamp);
+        return (
+            userTotalFlowedBalance.totalFlowed +
+            (Date.now() / 1000 - userTotalFlowedBalance.timestamp / 1000) * Number(userFlowRate)
+        );
+    }, [time, userTotalFlowedBalance, userFlowRate]);
     const isFullyAllocated = useMemo(() => {
         return (
             userPipeData
@@ -175,13 +226,13 @@ const Valve = (props: IValveProps) => {
         );
     }, [userPipeData]);
 
-    // useEffect(() => {
-    //     const timer = setTimeout(() => {
-    //         setTime(new Date());
-    //     }, 1000);
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setTime(new Date());
+        }, 1000);
 
-    //     return () => clearTimeout(timer);
-    // });
+        return () => clearTimeout(timer);
+    });
 
     useEffect(() => {
         if (!props.userAddress || !address) return;
@@ -197,11 +248,21 @@ const Valve = (props: IValveProps) => {
             const pipeAddresses = await contract.getValidPipeAddresses();
             setPipeAddresses(pipeAddresses);
 
+            // we kinda want to do this whenever the user updates //*** */
+            const [userTotalFlowedBalance, timestamp] = await contract.getUserTotalFlowedBalance();
+
+            setUserTotalFlowedBalance({
+                totalFlowed: userTotalFlowedBalance.toNumber(),
+                timestamp: new Date(timestamp.toNumber() * 1000).getTime(),
+            });
+            console.log(userTotalFlowedBalance.toNumber());
+            //*** */
+
             const token = await contract.acceptedToken();
+            await getRelevantFlowData(superfluidFramework, token);
             setToken(token);
         })();
     }, [address, props.userAddress]);
-
     useEffect(() => {
         if (!sf || !token) return;
         (async () => {
@@ -227,7 +288,7 @@ const Valve = (props: IValveProps) => {
                                 <Typography variant="body1" color="textSecondary">
                                     {getFlowRateText(valveFlowRate)}
                                 </Typography>
-                                <Typography variant="h5"># inflow streams</Typography>
+                                <Typography variant="h5"># inflows</Typography>
                                 <Typography variant="body1" color="textSecondary">
                                     {numInflows}
                                 </Typography>
@@ -238,7 +299,7 @@ const Valve = (props: IValveProps) => {
                                 <Typography variant="h4">User Flow Metrics</Typography>
                                 <Typography variant="h5">Total Flow Balance</Typography>
                                 <Typography variant="body1" color="textSecondary">
-                                    Total Flow Balance
+                                    {totalUserFlowedBalance}
                                 </Typography>
                                 <Typography variant="h5">Flow Rate</Typography>
                                 <Typography variant="body1" color="textSecondary">
@@ -280,15 +341,6 @@ const Valve = (props: IValveProps) => {
                                 color="primary"
                                 disabled={!isFullyAllocated || !inputFlowRate}
                                 variant="contained"
-                                onClick={() => createAllocation()}
-                            >
-                                Set Allocation
-                            </Button>
-                            <Button
-                                className="button flow-button"
-                                color="primary"
-                                disabled={!inputFlowRate}
-                                variant="contained"
                                 onClick={() => createOrUpdateFlow()}
                             >
                                 {Number(userFlowRate) > 0 ? "Update" : "Create"} Flow
@@ -305,7 +357,7 @@ const Valve = (props: IValveProps) => {
                             <Button
                                 className="button flow-button"
                                 color="secondary"
-                                disabled={!userFlowRate}
+                                disabled={Number(userFlowRate) === 0}
                                 variant="contained"
                                 onClick={() => deleteFlow()}
                             >

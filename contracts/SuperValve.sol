@@ -54,6 +54,21 @@ contract SuperValve is SuperAppBase, AccessControl {
     address[] public validPipeAddresses; // private
     mapping(address => mapping(address => int96)) public userAllocations; // private
 
+    event NewPipeInflow(address _pipe, int96 _flowRate);
+    event PipeInflowDeleted(address _pipe);
+    event UpdateFlowInfo(
+        address _pipe,
+        uint256 targetAllowance,
+        int96 targetUserToPipeFlowRate,
+        int96 previousValveToPipeFlowRate,
+        int96 oldUserToPipeFlowRate,
+        int96 userToPipeFlowRateDifference
+    );
+    event FlowRateInfo(uint256 appAllowance, int96 safeFlowRate);
+    event RealFlowRate(int96 flowRate);
+    event EndFlowRate(int96 endFlowRate);
+    event Terminator();
+
     constructor(
         ISuperfluid _host,
         IConstantFlowAgreementV1 _cfa,
@@ -87,30 +102,63 @@ contract SuperValve is SuperAppBase, AccessControl {
      */
     function withdraw(address[] memory _pipeAddresses) public {
         for (uint256 i; i < _pipeAddresses.length; i++) {
-            withdrawFromVault(_pipeAddresses[i]);
+            withdrawFromVault(_pipeAddresses[i], msg.sender);
         }
     }
 
     /** @dev Withdraws your funds from a single vault/pipe.
      */
-    function withdrawFromVault(address _pipeAddress) public validPipeAddress(_pipeAddress) {
+    function withdrawFromVault(address _pipeAddress, address _user) public validPipeAddress(_pipeAddress) {
         IPipe pipe = IPipe(_pipeAddress);
-        (, int96 flowRate, , ) = cfa.getFlow(acceptedToken, address(this), _pipeAddress);
+        (, int96 valveToPipeFlowRate, , ) = cfa.getFlow(acceptedToken, address(this), _pipeAddress);
 
-        int96 previousFlowRate = getUserPipeFlowRate(msg.sender, _pipeAddress);
-        if (pipe.totalWithdrawableBalance(msg.sender, previousFlowRate) > 0) {
+        int96 previousFlowRate = getUserPipeFlowRate(_user, _pipeAddress);
+        if (pipe.totalWithdrawableBalance(_user, previousFlowRate) > 0) {
             // update the valveToPipeData in IPipe (same flow rate, but need to calculate total flow
             // before withdrawal)
-            pipe.setPipeFlowData(flowRate);
+            pipe.setPipeFlowData(valveToPipeFlowRate);
 
             pipe.withdraw(previousFlowRate);
         }
+    }
+
+    // TODO: This doesn't currently work.
+    /** @dev Gets the withdrawable flow balance of all pipes as well
+     * as the current timestamp which will allow client side calculation
+     * of live flow.
+     */
+    function getUserTotalFlowedBalance() public view returns (int256 totalBalance, uint256 timestamp) {
+        for (uint256 i; i < validPipeAddresses.length; i++) {
+            int96 userToPipeFlowRate = getUserPipeFlowRate(msg.sender, validPipeAddresses[i]);
+            int256 withdrawableFlowAmount = getUserPipeFlowBalance(
+                msg.sender,
+                validPipeAddresses[i],
+                userToPipeFlowRate
+            );
+            totalBalance = totalBalance.add(withdrawableFlowAmount);
+        }
+        timestamp = block.timestamp;
+    }
+
+    /** @dev Gets the withdrawable flow balance from a single pipe,
+     * which is essentially your deposited balance into the pipe.
+     */
+    function getUserPipeFlowBalance(
+        address _user,
+        address _pipeAddress,
+        int96 _flowRate
+    ) public view returns (int256) {
+        return (IPipe(_pipeAddress).withdrawableFlowBalance(_user, _flowRate));
     }
 
     function getUserPipeFlowRate(address _user, address _pipe) public view returns (int96) {
         (, int96 userToValveFlow, , ) = cfa.getFlow(acceptedToken, _user, address(this));
         int96 pipeAllocationPercentage = userAllocations[_user][_pipe];
         return mulDiv(userToValveFlow, pipeAllocationPercentage, ONE_HUNDRED_PERCENT);
+    }
+
+    function getUserPipeAllocation(address _user, address _pipeAddress) public view returns (int96 pipeAllocationPct) {
+        pipeAllocationPct = userAllocations[_user][_pipeAddress];
     }
 
     function getValidPipeAddresses() public view returns (address[] memory) {
@@ -148,6 +196,7 @@ contract SuperValve is SuperAppBase, AccessControl {
         int96 b,
         int96 c
     ) internal pure returns (int96) {
+        if (c == 0) return 0;
         return int96(int256(a).mul(int256(b)).div(int256(c)));
     }
 
@@ -195,19 +244,25 @@ contract SuperValve is SuperAppBase, AccessControl {
         newCtx = data.ctx;
 
         // in case of mfa, we underutlize the app allowance for simplicity
-        int96 safeFlowRate = cfa.getMaximumFlowRateFromDeposit(acceptedToken, data.context.appAllowanceGranted - 1);
-        data.context.appAllowanceGranted = cfa.getDepositRequiredForFlowRate(acceptedToken, safeFlowRate);
+        int96 safeFlowRate = data.newUserToValveFlowRate == 0
+            ? 0
+            : cfa.getMaximumFlowRateFromDeposit(acceptedToken, data.context.appAllowanceGranted.sub(1));
+        data.context.appAllowanceGranted = data.newUserToValveFlowRate == 0
+            ? 0
+            : cfa.getDepositRequiredForFlowRate(acceptedToken, safeFlowRate);
+
+        emit FlowRateInfo(data.context.appAllowanceGranted, safeFlowRate);
+        emit RealFlowRate(data.newUserToValveFlowRate);
 
         for (uint256 i = 0; i < allocations.receivers.length; i++) {
             ReceiverData memory receiverData = allocations.receivers[i];
+            int96 newPercentage = receiverData.percentageAllocation;
             require(
-                receiverData.percentageAllocation >= 0 && receiverData.percentageAllocation <= ONE_HUNDRED_PERCENT,
+                newPercentage >= 0 && newPercentage <= ONE_HUNDRED_PERCENT,
                 "SuperValve: Your percentage is outside of the acceptable range."
             );
 
-            int96 newPercentage = receiverData.percentageAllocation;
-
-            // get orevious valveToPipe flow rate
+            // get previous valveToPipe flow rate
             (, int96 previousValveToPipeFlowRate, , ) = cfa.getFlow(
                 acceptedToken,
                 address(this),
@@ -220,14 +275,16 @@ contract SuperValve is SuperAppBase, AccessControl {
                 continue;
             }
 
-            // get target allowance based on app allowance granted as well as
+            // get target allowance based on app allowance granted as well as percentage allocation
             uint256 targetAllowance = data
             .context
             .appAllowanceGranted
             .mul(uint256(receiverData.percentageAllocation))
             .div(100);
 
-            int96 targetUserToPipeFlowRate = cfa.getMaximumFlowRateFromDeposit(acceptedToken, targetAllowance);
+            int96 targetUserToPipeFlowRate = data.newUserToValveFlowRate == 0
+                ? 0
+                : cfa.getMaximumFlowRateFromDeposit(acceptedToken, targetAllowance);
             data.newUserToValveFlowRate = data.newUserToValveFlowRate.sub(targetUserToPipeFlowRate, "");
 
             // get the old userToPipe flow rate (totalUserToValve * previousPctAlloc / 100%)
@@ -243,6 +300,14 @@ contract SuperValve is SuperAppBase, AccessControl {
                 "Int96: Error subtracting."
             );
 
+            emit UpdateFlowInfo(
+                receiverData.pipeRecipient,
+                targetAllowance,
+                targetUserToPipeFlowRate,
+                previousValveToPipeFlowRate,
+                oldUserToPipeFlowRate,
+                userToPipeFlowRateDifference
+            );
             userAllocations[data.context.msgSender][receiverData.pipeRecipient] = newPercentage;
 
             // update the user flow withdraw data in Pipe for accounting purposes
@@ -253,7 +318,8 @@ contract SuperValve is SuperAppBase, AccessControl {
                 "Int96: Could not add."
             );
 
-            IPipe(receiverData.pipeRecipient).setPipeFlowData(newValveToPipeFlowRate);
+            IPipe(receiverData.pipeRecipient).setPipeFlowData(newValveToPipeFlowRate <= 0 ? 0 : newValveToPipeFlowRate);
+
             if (newValveToPipeFlowRate > 0) {
                 (newCtx, ) = host.callAgreementWithContext(
                     cfa,
@@ -267,6 +333,8 @@ contract SuperValve is SuperAppBase, AccessControl {
                     "0x",
                     newCtx
                 );
+
+                emit NewPipeInflow(receiverData.pipeRecipient, newValveToPipeFlowRate);
             } else {
                 (newCtx, ) = host.callAgreementWithContext(
                     cfa,
@@ -280,8 +348,11 @@ contract SuperValve is SuperAppBase, AccessControl {
                     "0x",
                     newCtx
                 );
+
+                emit PipeInflowDeleted(receiverData.pipeRecipient);
             }
         }
+        emit EndFlowRate(data.newUserToValveFlowRate);
         require(data.newUserToValveFlowRate >= 0, "SuperValve: Outflow is greater than the inflow from the user.");
     }
 
@@ -409,7 +480,7 @@ contract SuperValve is SuperAppBase, AccessControl {
         ISuperfluid.Context memory sfContext = host.decodeCtx(_ctx);
 
         Allocations memory userDataAllocations = _parseUserData(sfContext.userData);
-
+        emit Terminator();
         // get the newly created/updated userToValve flow rate
         (int96 oldUserToValveFlowRate, ) = getCallbackData(_cbdata);
         (, int96 newUserToValveFlowRate, , ) = cfa.getFlowByID(acceptedToken, _agreementId);
@@ -453,18 +524,8 @@ contract SuperValve is SuperAppBase, AccessControl {
         _;
     }
 
-    modifier hasFlowRate(int96 _flowRate) {
-        require(_flowRate > 0, "SuperValve: Flow rate must be greater than 0.");
-        _;
-    }
-
     modifier onlyHost() {
         require(msg.sender == address(host), "SuperValve: support only one host");
-        _;
-    }
-
-    modifier validToken(ISuperToken _token) {
-        require(address(_token) == address(acceptedToken), "SuperValve: not accepted tokens");
         _;
     }
 

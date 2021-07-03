@@ -3,9 +3,9 @@ pragma solidity >=0.7.1;
 
 interface IPipe {
     /**
-     * @dev Withdraws funds from the vault and any existing stream to the caller.
+     * @dev Withdraws funds from the vault and any existing flows to the caller.
      */
-    function withdraw(int96 _flowRate) external;
+    function withdraw(int96 _flowRate, address _user) external;
 
     /**
      * @dev Get the balance that currently belongs to the pipe.

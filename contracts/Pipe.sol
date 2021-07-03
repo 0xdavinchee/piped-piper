@@ -49,7 +49,7 @@ contract Pipe is Vault {
     InflowToPipeData public inflowToPipeData; // private
 
     event DepositFundsToVault(uint256 amount, uint256 timestamp);
-    event WithdrawFromSuperApp(address indexed withdrawer, uint256 amount);
+    event WithdrawFromPipe(address indexed withdrawer, uint256 amount);
 
     constructor(ISuperToken _acceptedToken) Vault() {
         require(address(_acceptedToken) != address(0), "Token is zero address.");
@@ -64,19 +64,16 @@ contract Pipe is Vault {
     /**
      * @dev Returns whether a batch deposit is more recent than a flow create/update.
      */
-    function isDepositAfterUpdate(address _depositor) internal view returns (bool) {
-        return lastVaultDepositTimestamp > userFlowData[_depositor].flowUpdatedTimestamp;
+    function isDepositAfterUpdate(address _user) internal view returns (bool) {
+        return lastVaultDepositTimestamp > userFlowData[_user].flowUpdatedTimestamp;
     }
 
     /**
      * @dev Returns the most recent of: the last time the user updated their flow rate,
      * when a batch vault deposit occurred, or the user withdrew.
      */
-    function getLastUpdatedTime(address _depositor) internal view returns (uint256) {
-        return
-            isDepositAfterUpdate(_depositor)
-                ? lastVaultDepositTimestamp
-                : userFlowData[_depositor].flowUpdatedTimestamp;
+    function getLastUpdatedTime(address _user) internal view returns (uint256) {
+        return isDepositAfterUpdate(_user) ? lastVaultDepositTimestamp : userFlowData[_user].flowUpdatedTimestamp;
     }
 
     /**
@@ -84,9 +81,9 @@ contract Pipe is Vault {
      * since last flow is more recent, we either add the previous flowAmount or just get the flowAmount
      * since the deposit.
      */
-    function _withdrawableFlowAmount(address _depositor, int96 _previousFlowRate) internal view returns (int256) {
-        int256 addAmount = isDepositAfterUpdate(_depositor) ? 0 : userFlowData[_depositor].flowAmountSinceUpdate;
-        block.timestamp.toInt256().sub(getLastUpdatedTime(_depositor).toInt256()).mul(_previousFlowRate).add(addAmount);
+    function _withdrawableFlowAmount(address _user, int96 _flowRate) internal view returns (int256) {
+        int256 addAmount = isDepositAfterUpdate(_user) ? 0 : userFlowData[_user].flowAmountSinceUpdate;
+        block.timestamp.toInt256().sub(getLastUpdatedTime(_user).toInt256()).mul(_flowRate).add(addAmount);
     }
 
     /**
@@ -94,14 +91,12 @@ contract Pipe is Vault {
      * when the user flow amount last updated as well as the amount of flow since the user
      * last updated their flow agreement.
      */
-    function setUserFlowWithdrawData(address _depositor, int96 _previousFlowRate) external {
-        userFlowData[_depositor].totalFlowedToPipe = userFlowData[_depositor].totalFlowedToPipe.add(
-            block.timestamp.toInt256().sub(userFlowData[_depositor].flowUpdatedTimestamp.toInt256()).mul(
-                _previousFlowRate
-            )
+    function setUserFlowWithdrawData(address _user, int96 _previousFlowRate) external {
+        userFlowData[_user].totalFlowedToPipe = userFlowData[_user].totalFlowedToPipe.add(
+            block.timestamp.toInt256().sub(userFlowData[_user].flowUpdatedTimestamp.toInt256()).mul(_previousFlowRate)
         );
-        userFlowData[_depositor].flowUpdatedTimestamp = block.timestamp;
-        userFlowData[_depositor].flowAmountSinceUpdate = _withdrawableFlowAmount(_depositor, _previousFlowRate);
+        userFlowData[_user].flowUpdatedTimestamp = block.timestamp;
+        userFlowData[_user].flowAmountSinceUpdate = _withdrawableFlowAmount(_user, _previousFlowRate);
     }
 
     /**
@@ -147,30 +142,30 @@ contract Pipe is Vault {
     /**
      * @dev Withdraws the tokens from a vault and updates the state accordingly.
      */
-    function withdraw(int96 _flowRate) external {
-        _withdraw(_flowRate);
+    function withdraw(int96 _flowRate, address _user) external {
+        _withdraw(_flowRate, _user);
     }
 
     /**
      * @dev Withdraws any deposited tokens from a vault as well as the flow amount and updates the state accordingly.
      */
-    function _withdraw(int96 _flowRate) internal {
+    function _withdraw(int96 _flowRate, address _user) internal {
         uint256 totalVaultBalance = _vaultBalanceOf(address(this));
-        uint256 availableVaultWithdrawAmount = _vaultRewardBalanceOf(msg.sender, totalVaultBalance);
-        int256 availableFlowWithdraw = _withdrawableFlowAmount(msg.sender, _flowRate);
+        uint256 availableVaultWithdrawAmount = _vaultRewardBalanceOf(_user, totalVaultBalance);
+        int256 availableFlowWithdraw = _withdrawableFlowAmount(_user, _flowRate);
 
         // withdrawable vault amount (incl. rewards) + user's _withdrawableFlowAmount
         uint256 withdrawableAmount = availableFlowWithdraw.toUint256();
         require(withdrawableAmount > 0 || availableVaultWithdrawAmount > 0, "There is nothing to withdraw.");
 
         // update the user's vault withdrawn amounts
-        userFlowData[msg.sender].vaultWithdrawnAmount = userFlowData[msg.sender].vaultWithdrawnAmount.add(
+        userFlowData[_user].vaultWithdrawnAmount = userFlowData[_user].vaultWithdrawnAmount.add(
             availableVaultWithdrawAmount
         );
 
         // since the user is withdrawing, we reset the flowAmount and the flow available for withdrawal
-        userFlowData[msg.sender].flowAmountSinceUpdate = 0;
-        userFlowData[msg.sender].flowUpdatedTimestamp = block.timestamp;
+        userFlowData[_user].flowAmountSinceUpdate = 0;
+        userFlowData[_user].flowUpdatedTimestamp = block.timestamp;
 
         if (availableVaultWithdrawAmount > 0) {
             // withdraw from the vault directly to user
@@ -178,10 +173,10 @@ contract Pipe is Vault {
         }
 
         // Transfer balance
-        bool success = ISuperToken(acceptedToken).transfer(msg.sender, withdrawableAmount);
+        bool success = ISuperToken(acceptedToken).transfer(_user, withdrawableAmount);
         require(success, "Unable to transfer tokens.");
 
-        emit WithdrawFromSuperApp(msg.sender, withdrawableAmount);
+        emit WithdrawFromPipe(_user, withdrawableAmount);
     }
 
     /**************************************************************************
@@ -190,8 +185,8 @@ contract Pipe is Vault {
 
     /** @dev Returns the amount of flowed tokens that are withdrawable by the _depositor.
      */
-    function withdrawableFlowBalance(address _depositor, int96 _flowRate) external view returns (int256) {
-        return _withdrawableFlowAmount(_depositor, _flowRate);
+    function withdrawableFlowBalance(address _user, int96 _flowRate) external view returns (int256) {
+        return _withdrawableFlowAmount(_user, _flowRate);
     }
 
     /** @dev Returns the total withdrawable balance, composed of the tokens deposited in the vault + rewards
@@ -208,11 +203,11 @@ contract Pipe is Vault {
      * calculated based on their share of the Pipe deposits.
      */
     function _vaultRewardBalanceOf(address _withdrawer, uint256 _vaultBalance) internal view returns (uint256) {
-        int256 userTotalFlowedToPipe = userFlowData[_withdrawer].totalFlowedToPipe;
-        uint256 totalVaultWithdrawableAmount = userTotalFlowedToPipe
-        .div(inflowToPipeData.totalInflowToPipeFlow)
-        .toUint256()
-        .mul(_vaultBalance);
+        uint256 totalVaultWithdrawableAmount = inflowToPipeData.totalInflowToPipeFlow == 0
+            ? 0
+            : userFlowData[_withdrawer].totalFlowedToPipe.div(inflowToPipeData.totalInflowToPipeFlow).toUint256().mul(
+                _vaultBalance
+            );
 
         return
             totalVaultWithdrawableAmount > userFlowData[_withdrawer].vaultWithdrawnAmount
