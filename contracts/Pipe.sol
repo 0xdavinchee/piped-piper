@@ -92,7 +92,7 @@ contract Pipe is Vault {
      */
     function _withdrawableFlowAmount(address _user, int96 _flowRate) internal view returns (int256) {
         int256 addAmount = isDepositAfterUpdate(_user) ? 0 : userFlowData[_user].flowAmountSinceUpdate;
-        block.timestamp.toInt256().sub(getLastUpdatedTime(_user).toInt256()).mul(_flowRate).add(addAmount);
+        return block.timestamp.toInt256().sub(getLastUpdatedTime(_user).toInt256()).mul(_flowRate).add(addAmount);
     }
 
     /**
