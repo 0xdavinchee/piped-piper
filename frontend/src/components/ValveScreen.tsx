@@ -216,7 +216,6 @@ const Valve = (props: IValveProps) => {
      * the difference between now and when we got this information * the user flow rate.
      */
     const totalUserFlowedBalance = useMemo(() => {
-        console.log("test", userTotalFlowedBalance.timestamp);
         return (
             userTotalFlowedBalance.totalFlowed +
             (Date.now() / 1000 - userTotalFlowedBalance.timestamp / 1000) * Number(userFlowRate)
@@ -258,10 +257,9 @@ const Valve = (props: IValveProps) => {
             const [userTotalFlowedBalance, timestamp] = await contract.getUserTotalFlowedBalance(props.userAddress);
 
             setUserTotalFlowedBalance({
-                totalFlowed: userTotalFlowedBalance.toNumber(),
+                totalFlowed: Number(userTotalFlowedBalance.toString()) / 10 ** 18,
                 timestamp: new Date(timestamp.toNumber() * 1000).getTime(),
             });
-            console.log(userTotalFlowedBalance.toNumber());
             //*** */
 
             const token = await contract.acceptedToken();
@@ -269,6 +267,7 @@ const Valve = (props: IValveProps) => {
             setToken(token);
         })();
     }, [address, props.userAddress]);
+
     useEffect(() => {
         if (!sf || !token) return;
         (async () => {
