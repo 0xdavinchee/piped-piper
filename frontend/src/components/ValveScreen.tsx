@@ -22,8 +22,8 @@ interface IFlowData {
 // TODO: this should come from on chain, that is, a subgraph which gets us a list of the valid
 // vault pipe addresses, in addition, we should probably have name and stuff on the VaultPipe contract.
 // TODO: figure out why we cannot stop flows - why isn't this wokring.
-const PIPE_1 = "0xFC442a90Ee183e458685dE683D8dc69D574aD22D";
-const PIPE_2 = "0xC102B7aF4f7caE096675e64ea71f8CEe33b8e975";
+const PIPE_1 = "0x37e465Bfb567a9081c962676ed604Cf9adD7dcfA";
+const PIPE_2 = "0x23aA18C5a88Abf824d43375c03D0029A332705C8";
 const PIPES: IPipeData[] = [
     { pipeAddress: PIPE_1, name: "fUSDC Vault 1" },
     { pipeAddress: PIPE_2, name: "fUSDC Vault 2" },
@@ -84,6 +84,12 @@ const Valve = (props: IValveProps) => {
         if (sf == null) return;
         const inflowData = await sf.cfa.listFlows({ superToken: tokenAddress, account: props.userAddress });
         console.log("inflowData", inflowData);
+        const userToValveFlow = await sf.cfa.getFlow({
+            superToken: tokenAddress,
+            sender: props.userAddress,
+            receiver: address,
+        });
+        console.log("userToValveFlow", userToValveFlow);
         const flowData1 = await sf.cfa.getFlow({
             superToken: tokenAddress,
             sender: address,
@@ -249,7 +255,7 @@ const Valve = (props: IValveProps) => {
             setPipeAddresses(pipeAddresses);
 
             // we kinda want to do this whenever the user updates //*** */
-            const [userTotalFlowedBalance, timestamp] = await contract.getUserTotalFlowedBalance();
+            const [userTotalFlowedBalance, timestamp] = await contract.getUserTotalFlowedBalance(props.userAddress);
 
             setUserTotalFlowedBalance({
                 totalFlowed: userTotalFlowedBalance.toNumber(),
