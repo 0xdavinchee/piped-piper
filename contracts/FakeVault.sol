@@ -29,20 +29,20 @@ contract FakeVault is ERC20 {
     /** @dev User can use this function to deposits the acceptedToken, and receive
      * vault tokens in return.
      */
-    function depositTokens(uint256 _amount) public {
-        bool success = acceptedToken.transfer(address(this), _amount);
+    function depositTokens(uint256 _amount, address _user) public {
+        bool success = acceptedToken.transfer(address(this), _amount); // todo: will address(this) correctly reference this?
         require(success, "FakeVault: Deposit transfer failed.");
-        _mint(msg.sender, _amount);
+        _mint(_user, _amount);
     }
 
     /** @dev User can use this function to deposit the vault token and receive the exact
      * number of accepted tokens in return. (Normally this number would be calculated based)
      * on a % share of the pool.
      */
-    function withdrawTokens(uint256 _amount) public {
+    function withdrawTokens(uint256 _amount, address _user) public {
         bool depositSuccess = IERC20(address(this)).transfer(address(this), _amount);
         require(depositSuccess, "FakeVault: Deposit transfer failed.");
-        bool withdrawSuccess = acceptedToken.transfer(msg.sender, _amount);
+        bool withdrawSuccess = acceptedToken.transfer(_user, _amount);
         require(withdrawSuccess, "FakeVault: Withdraw transfer failed.");
     }
 }

@@ -118,7 +118,7 @@ contract SuperValve is SuperAppBase, AccessControl {
             // before withdrawal)
             pipe.setPipeFlowData(valveToPipeFlowRate);
 
-            pipe.withdraw(previousFlowRate);
+            pipe.withdraw(previousFlowRate, _user);
         }
     }
 
@@ -127,11 +127,11 @@ contract SuperValve is SuperAppBase, AccessControl {
      * as the current timestamp which will allow client side calculation
      * of live flow.
      */
-    function getUserTotalFlowedBalance() public view returns (int256 totalBalance, uint256 timestamp) {
+    function getUserTotalFlowedBalance(address _user) public view returns (int256 totalBalance, uint256 timestamp) {
         for (uint256 i; i < validPipeAddresses.length; i++) {
-            int96 userToPipeFlowRate = getUserPipeFlowRate(msg.sender, validPipeAddresses[i]);
+            int96 userToPipeFlowRate = getUserPipeFlowRate(_user, validPipeAddresses[i]);
             int256 withdrawableFlowAmount = getUserPipeFlowBalance(
-                msg.sender,
+                _user,
                 validPipeAddresses[i],
                 userToPipeFlowRate
             );

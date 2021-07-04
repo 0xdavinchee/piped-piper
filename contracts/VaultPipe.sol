@@ -18,14 +18,14 @@ contract VaultPipe is Pipe {
      * by utilizing the external contract's interface.
      */
     function _depositToVault(uint256 _amount) public override {
-        vault.depositTokens(_amount);
+        vault.depositTokens(_amount, address(this));
     }
 
     /** @dev Overrides the Vault abstract contract's _withdrawToVault function
      * by utilizing the external contract's interface.
      */
-    function _withdrawFromVault(uint256 _amount) public override {
-        vault.withdrawTokens(_amount);
+    function _withdrawFromVault(uint256 _amount, address _user) public override {
+        vault.withdrawTokens(_amount, _user);
     }
 
     /** @dev Overrides the Vault abstract contract's _vaultBalanceOf function
