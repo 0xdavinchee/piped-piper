@@ -7,8 +7,9 @@ import "@openzeppelin/contracts/utils/math/Math.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import { ISuperToken } from "@superfluid-finance/ethereum-contracts/contracts/interfaces/superfluid/ISuperfluid.sol";
 import "./interfaces/IVault.sol";
+import "./interfaces/IPipe.sol";
 
-contract PipeBase is Ownable {
+contract PipeBase is Ownable, IPipe {
 	using SafeERC20 for IERC20;
 	using Math for uint256;
 
@@ -36,9 +37,31 @@ contract PipeBase is Ownable {
 		controlValve = _valve;
 	}
 
+	//******************
+	// Public functions
+	//******************
+
+	function deposit(uint256 _amount) external override onlyOwner {
+		_depositToVault(_amount);
+	}
+
+	// @dev Deposit all pending SuperTokens currently in contract
+	function depositAll() external override onlyOwner {
+		uint256 amount = inputToken.balanceOf(address(this));
+		_depositToVault(amount);
+	}
+
+	function withdraw(uint256 _amount, address _to) external override onlyOwner {
+		_withdrawFromVault(_amount, _to);
+	}
+
+	//******************
+	// Private functions
+	//******************
+
 	// @dev Downgrades streamed SuperTokens and deposits into vault. User allocations
 	//			are tracked in associated SuperValve.
-	function deposit(uint256 _amount) public onlyOwner {
+	function _depositToVault(uint256 _amount) internal {
 		uint256 superTokenAmount = inputToken.balanceOf(address(this));
 		require(superTokenAmount >= _amount, "Requested amount of tokens are not available to deposit");
 
@@ -48,19 +71,17 @@ contract PipeBase is Ownable {
 		// TODO emit deposit event
 	}
 
-	// @dev Deposit all pending SuperTokens currently in contract
-	function depositAll() external onlyOwner {
-		uint256 amount = inputToken.balanceOf(address(this));
-		deposit(amount);
-	}
 
-	// Withdraws amount to user. Amount is calculated in ControlValve based on
-	// user's stream amounts.
-	function withdraw(uint256 _amount, address _to) external onlyValve {
-		// TODO check if vault has enough to withdraw
+	// @dev Withdraws amount to user. Called by user. Amount is calculated in ControlValve
+	// based on	user's stream amounts.
+	function _withdrawFromVault(uint256 _amount, address _to) internal onlyValve {
+		require(IERC20(address(vault)).balanceOf(address(this)) > _amount,
+			"Not enough tokens in vault to withdraw this amount");
+
+		// Withdraws outputToken to this contract
 		vault.withdraw(_amount);
-		// TODO unwrap vault token to underlying ERC20 (outputToken)
 
+		// Transfer to user
 		outputToken.safeTransfer(_to, _amount);
 
 		// TODO emit withdrawal event

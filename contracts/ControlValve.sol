@@ -14,6 +14,13 @@ import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "./interfaces/IPipe.sol";
+
+/*
+  TODO In hindsight, the ControlValve and the Pipe did not need to be split. I believe the
+  correct design for this would be to create 1 SuperApp (a SuperPipe) per vault. This could
+  handle the user flow accounting and also the Oven functionality for vault deposits.
+*/
 
 contract ControlValve is Ownable, SuperAppBase {
   using SafeERC20 for ERC20;
@@ -71,18 +78,16 @@ contract ControlValve is Ownable, SuperAppBase {
    *************************************************************************/
 
   /// @dev If a new stream is opened, or an existing one is opened
-  function _updateOutflow(bytes calldata ctx, bytes calldata agreementData) internal returns (bytes memory newCtx) {
+  function _updateOutflow(bytes calldata ctx) internal returns (bytes memory newCtx) {
     newCtx = ctx;
 
     // Create a new flow to the pipe and assign to the user
-    (address requester, address flowReceiver) = abi.decode(agreementData, (address, address));
+    // TODO decode 1 time
+    address requester = host.decodeCtx(newCtx).msgSender;
+    bytes memory userData = host.decodeCtx(newCtx).userData;
+    address pipe = abi.decode(userData, (address));
 
-    address pipe;
-    if (isPipeValid(flowReceiver)) {
-      pipe = flowReceiver;
-    } else {
-      return newCtx;
-    }
+    if (!isPipeValid(pipe)) return newCtx;
 
     int changeInFlowRate = cfa.getNetFlow(acceptedToken, address(this)) - totalInflow;
 
@@ -132,7 +137,7 @@ contract ControlValve is Ownable, SuperAppBase {
         abi.encodeWithSelector(
           cfa.createFlow.selector,
           acceptedToken,
-          flowReceiver,
+          pipe,
           changeInFlowRate,
           new bytes(0) // placeholder
         ),
@@ -146,16 +151,22 @@ contract ControlValve is Ownable, SuperAppBase {
     totalInflow = cfa.getNetFlow(acceptedToken, address(this));
   }
 
+  function withdraw(address _pipeAddress, uint _amount) public returns (uint) {
+    require(isPipeValid(_pipeAddress), "Invalid pipe address");
+    IPipe pipe = IPipe(_pipeAddress);
+    
+    // Find how much user has deposited via their flows
+  }
+
   /**************************************************************************
    * Pipe management methods
    *************************************************************************/
 
-  // TODO make so only owner can change pipes array
-  function addPipe(address _pipeAddress) public {
+  function addPipe(address _pipeAddress) public onlyOwner {
     validPipes.push(_pipeAddress);
   }
 
-  function removePipe(address _pipeAddress) public {
+  function removePipe(address _pipeAddress) public onlyOwner {
     validPipes.push(_pipeAddress);
   }
 
@@ -172,7 +183,7 @@ contract ControlValve is Ownable, SuperAppBase {
     return validPipes;
   }
 
-  function getPipeInflow(address _pipeAddress) public returns (int96) {
+  function getPipeInflow(address _pipeAddress) public view returns (int96) {
     if(isPipeValid(_pipeAddress)) {
       cfa.getNetFlow(acceptedToken, _pipeAddress);
     } else {
@@ -188,38 +199,38 @@ contract ControlValve is Ownable, SuperAppBase {
     ISuperToken _superToken,
     address _agreementClass,
     bytes32, // _agreementId,
-    bytes calldata _agreementData,
+    bytes calldata,
     bytes calldata, // _cbdata,
     bytes calldata _ctx
   ) external override onlyExpected(_superToken, _agreementClass) onlyHost returns (bytes memory newCtx) {
-    return _updateOutflow(_ctx, _agreementData);
+    return _updateOutflow(_ctx);
   }
 
   function afterAgreementUpdated(
     ISuperToken _superToken,
     address _agreementClass,
     bytes32, //_agreementId,
-    bytes calldata _agreementData,
+    bytes calldata,
     bytes calldata, //_cbdata,
     bytes calldata _ctx
   ) external override onlyExpected(_superToken, _agreementClass) onlyHost returns (bytes memory newCtx) {
     if (!_isAcceptedToken(_superToken) || !_isCFAv1(_agreementClass)) return _ctx;
 
-    return _updateOutflow(_ctx, _agreementData);
+    return _updateOutflow(_ctx);
   }
 
   function afterAgreementTerminated(
     ISuperToken _superToken,
     address _agreementClass,
     bytes32, //_agreementId,
-    bytes calldata _agreementData,
+    bytes calldata,
     bytes calldata, //_cbdata,
     bytes calldata _ctx
   ) external override onlyHost returns (bytes memory newCtx) {
     // According to the app basic guidelines, we should never revert in a termination callback
     if (!_isAcceptedToken(_superToken) || !_isCFAv1(_agreementClass)) return _ctx;
 
-    return _updateOutflow(_ctx, _agreementData);
+    return _updateOutflow(_ctx);
   }
 
   function _isAcceptedToken(ISuperToken superToken) internal view returns (bool) {
