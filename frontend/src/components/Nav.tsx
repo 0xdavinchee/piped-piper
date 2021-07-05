@@ -5,7 +5,16 @@ import pipe from "../images/pipe.png";
 import { PATH } from "../utils/constants";
 import { requestAccount } from "../utils/helpers";
 
-const Nav = ({ userAddress }: { userAddress: string }) => {
+const Nav = ({ userAddress, setUserAddress }: { userAddress: string, setUserAddress: (x: string) => void }) => {
+    const handleRequestAccount = async () => {
+        try {
+            const result = await requestAccount();
+        setUserAddress(result[0].toLowerCase());
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
     return (
         <AppBar position="static">
             <Toolbar className="nav-container">
@@ -17,7 +26,7 @@ const Nav = ({ userAddress }: { userAddress: string }) => {
                     </Typography>
                 </div>
                 {userAddress === "" && (
-                    <Button className="button nav-button" variant="contained" onClick={() => requestAccount()}>
+                    <Button className="button nav-button" variant="contained" onClick={() => handleRequestAccount()}>
                         Connect Wallet
                     </Button>
                 )}

@@ -61,7 +61,7 @@ const Router = ({ userAddress }: { userAddress: string }) => {
             </Typography>
             <Switch>
                 <Route exact path={PATH.Landing}>
-                    <Landing />
+                    <Landing userAddress={userAddress} />
                 </Route>
                 <Route exact path={PATH.Home}>
                     <Home valveData={VALVE_DATA} />
@@ -79,17 +79,17 @@ const Router = ({ userAddress }: { userAddress: string }) => {
 
 const PipedPiper = () => {
     const [userAddress, setUserAddress] = useState("");
-
     useEffect(() => {
         (async () => {
             const result = await requestAccount();
             setUserAddress(result[0].toLowerCase());
         })();
     }, []);
+
     return (
         <Container className="container">
             <BrowserRouter>
-                <Nav userAddress={userAddress} />
+                <Nav userAddress={userAddress} setUserAddress={x => setUserAddress(x)} />
                 <Router userAddress={userAddress} />
             </BrowserRouter>
         </Container>
