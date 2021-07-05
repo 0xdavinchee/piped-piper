@@ -11,6 +11,7 @@ import { ethers } from "ethers";
 interface IValveProps {
     readonly currency: string;
     readonly userAddress: string;
+    readonly setUserAddress: (x: string) => void;
 }
 
 interface IFlowData {
@@ -266,16 +267,32 @@ const Valve = (props: IValveProps) => {
     }, [sf, token]);
 
     useEffect(() => {
+        if (!ethereum) return;
+        ethereum.on("accountsChanged", (accounts: string[]) => {
+          props.setUserAddress(accounts[0].toLowerCase());
+        });
+    
+        return () => {
+          (window as any).ethereum.removeListener("accountsChanged", () => {});
+        };
+      }, []);
+
+    useEffect(() => {
         (async () => {
             const contract = initializeContract(true, address);
-            if(pipeAddresses.length === 0 || !contract) return;
-            const promises = await Promise.all(pipeAddresses.map(x => contract.getUserPipeAllocation(props.userAddress, x)));
-            const userPipeData = pipeAddresses.map((x, i) => ({pipeAddress: x, name: props.currency + " Vault " + i, percentage: promises[i].toString() }));
+            if (pipeAddresses.length === 0 || !contract) return;
+            const promises = await Promise.all(
+                pipeAddresses.map(x => contract.getUserPipeAllocation(props.userAddress, x)),
+            );
+            const userPipeData = pipeAddresses.map((x, i) => ({
+                pipeAddress: x,
+                name: props.currency + " Vault " + i,
+                percentage: promises[i].toString(),
+            }));
             console.log("userPipeData", userPipeData);
             setUserPipeData(userPipeData);
         })();
-        
-    }, [pipeAddresses, address]);
+    }, [pipeAddresses, address, props.currency]);
 
     return (
         <Container maxWidth="sm">

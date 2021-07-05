@@ -28,7 +28,7 @@ const checkHasVisited = () => {
     }
 };
 
-const Router = ({ userAddress }: { userAddress: string }) => {
+const Router = ({ userAddress, setUserAddress }: { userAddress: string, setUserAddress: (x: string) => void }) => {
     const history = useHistory();
     const location = useLocation();
 
@@ -67,7 +67,7 @@ const Router = ({ userAddress }: { userAddress: string }) => {
                     <Home valveData={VALVE_DATA} />
                 </Route>
                 <Route exact path={PATH.Valve}>
-                    <Valve currency={currencyOrVault()} userAddress={userAddress} />
+                    <Valve currency={currencyOrVault()} userAddress={userAddress} setUserAddress={x => setUserAddress(x)} />
                 </Route>
                 <Route exact path={PATH.Vault}>
                     <Vault />
@@ -90,7 +90,7 @@ const PipedPiper = () => {
         <Container className="container">
             <BrowserRouter>
                 <Nav userAddress={userAddress} setUserAddress={x => setUserAddress(x)} />
-                <Router userAddress={userAddress} />
+                <Router userAddress={userAddress} setUserAddress={x => setUserAddress(x)} />
             </BrowserRouter>
         </Container>
     );
