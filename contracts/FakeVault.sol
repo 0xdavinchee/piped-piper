@@ -10,7 +10,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 /// the vault tokens.
 contract FakeVault is ERC20 {
     address public owner;
-    IERC20 public acceptedToken;
+    IERC20 public acceptedToken; // fToken
 
     constructor(
         address _acceptedToken,
@@ -29,10 +29,8 @@ contract FakeVault is ERC20 {
     /** @dev User can use this function to deposits the acceptedToken, and receive
      * vault tokens in return.
      */
-    function depositTokens(uint256 _amount, address _user) public {
-        bool success = acceptedToken.transfer(address(this), _amount); // todo: will address(this) correctly reference this?
-        require(success, "FakeVault: Deposit transfer failed.");
-        _mint(_user, _amount);
+    function depositTokens(uint256 _amount, address _vaultPipe) public {
+        _mint(_vaultPipe, _amount);
     }
 
     /** @dev User can use this function to deposit the vault token and receive the exact
@@ -40,8 +38,7 @@ contract FakeVault is ERC20 {
      * on a % share of the pool.
      */
     function withdrawTokens(uint256 _amount, address _user) public {
-        bool depositSuccess = IERC20(address(this)).transfer(address(this), _amount);
-        require(depositSuccess, "FakeVault: Deposit transfer failed.");
+        _burn(address(this), _amount);
         bool withdrawSuccess = acceptedToken.transfer(_user, _amount);
         require(withdrawSuccess, "FakeVault: Withdraw transfer failed.");
     }

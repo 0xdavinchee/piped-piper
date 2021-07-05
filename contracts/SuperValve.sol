@@ -54,6 +54,7 @@ contract SuperValve is SuperAppBase, AccessControl {
 
     address[] public validPipeAddresses; // private
     mapping(address => mapping(address => int96)) public userAllocations; // private
+    mapping(address => mapping(address => int96)) public userFlowRates;
     int256 public totalValveBalance;
     uint256 public valveFlowRateLastUpdated;
 
@@ -69,9 +70,10 @@ contract SuperValve is SuperAppBase, AccessControl {
     );
     event FlowRateInfo(uint256 appAllowance, int96 safeFlowRate);
     event RealFlowRate(int96 flowRate);
-    event EndFlowRate(int96 endFlowRate);
-    event ValveBalanceUpdated(int256 valveBalance);
+    event ValveBalanceUpdated(int256 valveBalance, uint256 timestamp);
+    event ValveBalanceModify(int96 flowRate, int256 valveBalanceOld, int256 valveBalanceNew, uint256 timestamp);
     event Withdrawal(uint256 withdrawalAmount);
+    event WithdrawalData(int256 oldValveBalance, int256 newValveBalance, uint256 withdrawalAmount, int256 totalAdditionalFlow);
     event Terminator();
 
     constructor(
@@ -107,37 +109,47 @@ contract SuperValve is SuperAppBase, AccessControl {
      */
     function withdraw(address[] memory _pipeAddresses) public {
         uint256 totalWithdrawalAmount;
+        int256 totalAdditionalFlows;
         for (uint256 i; i < _pipeAddresses.length; i++) {
-            uint256 pipeWithdrawAmount = withdrawFromPipeVault(_pipeAddresses[i], msg.sender);
+            // prior to withdrawal, we must first add any additional flows to totalValveBalance
+            (, int96 valveToPipeFlowRate, ,) = cfa.getFlow(acceptedToken, address(this), _pipeAddresses[i]);
+            int256 flowAmountSinceUpdate = (block.timestamp.sub(valveFlowRateLastUpdated)).toInt256().mul(valveToPipeFlowRate);
+            totalAdditionalFlows = totalAdditionalFlows.add(flowAmountSinceUpdate);
+            uint256 pipeWithdrawAmount = withdrawFromPipeVault(_pipeAddresses[i], valveToPipeFlowRate, msg.sender);
             totalWithdrawalAmount = totalWithdrawalAmount.add(pipeWithdrawAmount);
         }
-        int256 newValveBalance = totalValveBalance.sub(totalWithdrawalAmount.toInt256());
+        int256 newValveBalance = totalValveBalance.add(totalAdditionalFlows).sub(totalWithdrawalAmount.toInt256());
+        emit WithdrawalData(totalValveBalance, newValveBalance, totalWithdrawalAmount, totalAdditionalFlows);
+        totalValveBalance = newValveBalance;
+        valveFlowRateLastUpdated = block.timestamp;
 
-        emit ValveBalanceUpdated(newValveBalance);
+        emit ValveBalanceUpdated(newValveBalance, block.timestamp);
+
         emit Withdrawal(totalWithdrawalAmount);
     }
 
     /** @dev Withdraws your funds from a single vault/pipe.
      */
-    function withdrawFromPipeVault(address _pipeAddress, address _user)
+    function withdrawFromPipeVault(address _pipeAddress, int96 _valveToPipeFlowRate, address _user)
         public
         validPipeAddress(_pipeAddress)
         returns (uint256 pipeWithdrawalAmount)
     {
         IPipe pipe = IPipe(_pipeAddress);
-        (, int96 valveToPipeFlowRate, , ) = cfa.getFlow(acceptedToken, address(this), _pipeAddress);
 
-        int96 previousFlowRate = getUserPipeFlowRate(_user, _pipeAddress);
-        if (pipe.totalWithdrawableBalance(_user, previousFlowRate) > 0) {
+        int96 previousUserToPipeFlowRate = getUserPipeFlowRate(_user, _pipeAddress);
+        if (pipe.totalWithdrawableBalance(_user, previousUserToPipeFlowRate) > 0) {
+            // We need to update the total flowed to pipe amount otherwise this is 0 initially and
+            // if they try to withdraw from vault, they get nothing.
+            pipe.setUserFlowWithdrawData(_user, previousUserToPipeFlowRate);
             // update the valveToPipeData in IPipe (same flow rate, but need to calculate total flow
             // before withdrawal)
-            pipe.setPipeFlowData(valveToPipeFlowRate);
+            pipe.setPipeFlowData(_valveToPipeFlowRate);
 
-            pipeWithdrawalAmount = pipe.withdraw(previousFlowRate, _user);
+            pipeWithdrawalAmount = pipe.withdraw(previousUserToPipeFlowRate, _user);
         }
     }
 
-    // TODO: This doesn't currently work.
     /** @dev Gets the withdrawable flow balance of all pipes as well
      * as the current timestamp which will allow client side calculation
      * of live flow.
@@ -152,20 +164,19 @@ contract SuperValve is SuperAppBase, AccessControl {
     }
 
     /** @dev Gets the withdrawable flow balance from a single pipe,
-     * which is essentially your deposited balance into the pipe.
+     * which is essentially your deposited balance into the pipe,
+     * this includes anything deposited into a vault.
      */
     function getUserPipeFlowBalance(
         address _user,
         address _pipeAddress,
         int96 _flowRate
     ) public view returns (int256) {
-        return (IPipe(_pipeAddress).withdrawableFlowBalance(_user, _flowRate));
+        return (IPipe(_pipeAddress).totalWithdrawableBalance(_user, _flowRate));
     }
 
     function getUserPipeFlowRate(address _user, address _pipe) public view returns (int96) {
-        (, int96 userToValveFlow, , ) = cfa.getFlow(acceptedToken, _user, address(this));
-        int96 pipeAllocationPercentage = userAllocations[_user][_pipe];
-        return mulDiv(userToValveFlow, pipeAllocationPercentage, ONE_HUNDRED_PERCENT);
+        return userFlowRates[_user][_pipe];
     }
 
     function getUserPipeAllocation(address _user, address _pipeAddress) public view returns (int96 pipeAllocationPct) {
@@ -241,10 +252,13 @@ contract SuperValve is SuperAppBase, AccessControl {
         (oldUserToValveFlowRate, previousValveInflowRate) = abi.decode(_cbdata, (int96, int96));
     }
 
-    /** @dev Gets the total valve balance */
+    /** @dev Gets the total valve balance. We subtract the current time from the previous updated
+     * time to get the time passed since a valve flow rate update and multiply this by the flow rate.
+     */
     function getTotalValveBalance(int96 _flowRate) public view returns (int256, uint256) {
+        int256 flowAmountSinceLastUpdate = (block.timestamp.sub(valveFlowRateLastUpdated)).toInt256().mul(_flowRate);
         return (
-            totalValveBalance.add((block.timestamp.sub(valveFlowRateLastUpdated)).toInt256().mul(_flowRate)),
+            totalValveBalance.add(flowAmountSinceLastUpdate),
             block.timestamp
         );
     }
@@ -265,13 +279,7 @@ contract SuperValve is SuperAppBase, AccessControl {
         Allocations memory userDataAllocations = _parseUserData(sfContext.userData);
 
         // get the newly created/updated userToValve flow rate
-        (int96 oldUserToValveFlowRate, int96 previousValveInflowRate) = getCallbackData(_cbdata);
-
-        (int256 updatedValveBalance, ) = getTotalValveBalance(previousValveInflowRate);
-        // update the totalValveBalance, we add the existing total valveBalance to the change
-        // in time * the previousValveInflowRate
-        totalValveBalance = updatedValveBalance;
-        emit ValveBalanceUpdated(updatedValveBalance);
+        (int96 oldUserToValveFlowRate, ) = getCallbackData(_cbdata);
 
         (, int96 newUserToValveFlowRate, , ) = cfa.getFlowByID(acceptedToken, _agreementId);
         newCtx = _updateValveToPipesFlow(
@@ -315,6 +323,9 @@ contract SuperValve is SuperAppBase, AccessControl {
             (, int96 previousValveToPipeFlowRate, , ) =
                 cfa.getFlow(acceptedToken, address(this), receiverData.pipeRecipient);
 
+            // we increment the totalValveBalance of the total flowed to each pipe here
+            totalValveBalance = totalValveBalance.add((block.timestamp.sub(valveFlowRateLastUpdated)).toInt256().mul(previousValveToPipeFlowRate));
+
             // if the user does not want to allocate anything to the pipe and no agreement exists currently,
             // we skip.
             if (newPercentage == 0 && previousValveToPipeFlowRate == 0) {
@@ -332,19 +343,18 @@ contract SuperValve is SuperAppBase, AccessControl {
             uint256 targetAllowance =
                 data.context.appAllowanceGranted.mul(uint256(receiverData.percentageAllocation)).div(100);
 
+            // get the target flow rate based on target allowance
             int96 targetUserToPipeFlowRate =
                 data.newUserToValveFlowRate == 0
                     ? 0
                     : cfa.getMaximumFlowRateFromDeposit(acceptedToken, targetAllowance);
+
+            // decrement from total user to valve flow rate
             data.newUserToValveFlowRate = data.newUserToValveFlowRate.sub(targetUserToPipeFlowRate, "");
 
-            // get the old userToPipe flow rate (totalUserToValve * previousPctAlloc / 100%)
-            int96 oldUserToPipeFlowRate =
-                mulDiv(
-                    data.oldUserToValveFlowRate,
-                    userAllocations[data.context.msgSender][receiverData.pipeRecipient],
-                    ONE_HUNDRED_PERCENT
-                );
+            // get the old userToPipe flow rate (we cannot calculate this from the agreement flow rate)
+            // we must save the targetFlowRate and use this each following time.
+            int96 oldUserToPipeFlowRate = userFlowRates[data.context.msgSender][receiverData.pipeRecipient];
 
             // new flow rate subtracted by previous flow rate to get difference
             int96 userToPipeFlowRateDifference =
@@ -358,7 +368,10 @@ contract SuperValve is SuperAppBase, AccessControl {
                 oldUserToPipeFlowRate,
                 userToPipeFlowRateDifference
             );
+            
+            // update the user's allocations and flow rate
             userAllocations[data.context.msgSender][receiverData.pipeRecipient] = newPercentage;
+            userFlowRates[data.context.msgSender][receiverData.pipeRecipient] = targetUserToPipeFlowRate;
 
             // update the user flow withdraw data in Pipe for accounting purposes
             IPipe(receiverData.pipeRecipient).setUserFlowWithdrawData(data.context.msgSender, oldUserToPipeFlowRate);
@@ -400,7 +413,9 @@ contract SuperValve is SuperAppBase, AccessControl {
                 emit PipeInflowDeleted(receiverData.pipeRecipient);
             }
         }
-        emit EndFlowRate(data.newUserToValveFlowRate);
+
+        // after getting the new total valve flow rate, we set the new flow rate updated time
+        valveFlowRateLastUpdated = block.timestamp;
         require(data.newUserToValveFlowRate >= 0, "SuperValve: Outflow is greater than the inflow from the user.");
     }
 

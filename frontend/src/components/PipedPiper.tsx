@@ -10,8 +10,6 @@ import { PATH, STORAGE } from "../utils/constants";
 import { IValveData } from "../utils/interfaces";
 import { requestAccount } from "../utils/helpers";
 
-// TODO: Might need to implement a subgraph in order to get data on user's flowrate into the various
-
 const VALVE_DATA: IValveData[] = [
     {
         address: process.env.REACT_APP_fUSDC_SUPER_VALVE_ADDRESS || "",
@@ -51,13 +49,13 @@ const Router = ({ userAddress, setUserAddress }: { userAddress: string, setUserA
         const splitPathname = location.pathname.split("/");
         const currencyData = VALVE_DATA.find(x => x.address === splitPathname[2]);
         const currencyName = currencyData ? currencyData.currency : "";
-        return splitPathname.length < 3 ? "" : splitPathname[1] === "valve" ? currencyName + " " : "vault name ";
+        return splitPathname.length < 3 ? "" : splitPathname[1] === "valve" ? currencyName : "vault name ";
     };
 
     return (
         <div className="router-container">
             <Typography className="title" variant="h1">
-                {currencyOrVault() + title()}
+                {currencyOrVault() + " " + title()}
             </Typography>
             <Switch>
                 <Route exact path={PATH.Landing}>

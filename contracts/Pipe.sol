@@ -108,9 +108,9 @@ contract Pipe is Vault {
                     _previousFlowRate
                 )
             );
+        userFlowData[_user].flowAmountSinceUpdate = _withdrawableFlowAmount(_user, _previousFlowRate);
         userFlowData[_user].totalFlowedToPipe = totalFlowedToPipe;
         userFlowData[_user].flowUpdatedTimestamp = block.timestamp;
-        userFlowData[_user].flowAmountSinceUpdate = _withdrawableFlowAmount(_user, _previousFlowRate);
 
         emit UserToPipeFlowDataUpdated(
             _user,
@@ -160,7 +160,7 @@ contract Pipe is Vault {
         ISuperToken(acceptedToken).downgrade(amount);
 
         // deposit into the vault
-        _depositToVault(amount);
+        _depositToVault(amount, address(this));
 
         emit DepositFundsToVault(amount, block.timestamp);
     }

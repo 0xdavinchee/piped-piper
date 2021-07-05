@@ -4,11 +4,9 @@ export interface IValveData {
     image_url: string;
 }
 
-export interface IPipeData {
+export interface IUserPipeData {
     pipeAddress: string;
     name: string;
-}
-
-export interface IUserPipeData extends IPipeData {
     percentage: string;
+    flowRate: string;
 }
