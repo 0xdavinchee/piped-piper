@@ -1,4 +1,5 @@
 import { Button, Card, CardContent, CircularProgress, Container, TextField, Typography } from "@material-ui/core";
+import LinearProgress from '@material-ui/core/LinearProgress';
 import SuperfluidSDK from "@superfluid-finance/js-sdk";
 import { Web3Provider } from "@ethersproject/providers";
 import { useParams } from "react-router-dom";
@@ -104,6 +105,7 @@ const Valve = (props: IValveProps) => {
      * Create/Update/Delete Functions
      *************************************************************************/
     const createOrUpdateFlow = async () => {
+        setFetching(true);
         if (Number(userFlowRate) > 0) {
             await updateFlow();
         } else {
@@ -124,6 +126,8 @@ const Valve = (props: IValveProps) => {
             await getAndSetFlowData(token);
         } catch (error) {
             console.error(error);
+        } finally {
+            setFetching(false);
         }
     };
 
@@ -140,12 +144,15 @@ const Valve = (props: IValveProps) => {
             await getAndSetFlowData(token);
         } catch (error) {
             console.error(error);
+        } finally {
+            setFetching(false);
         }
     };
 
     const deleteFlow = async () => {
         if (!sf || !token) return;
         try {
+            setFetching(true);
             await sf.cfa.deleteFlow({
                 superToken: token,
                 sender: props.userAddress,
@@ -155,6 +162,8 @@ const Valve = (props: IValveProps) => {
             await getAndSetFlowData(token);
         } catch (error) {
             console.error(error);
+        } finally {
+            setFetching(false);
         }
     };
 
@@ -162,11 +171,14 @@ const Valve = (props: IValveProps) => {
         const contract = initializeContract(true, address);
         if (!contract || !token || pipeAddresses.length === 0) return;
         try {
+            setFetching(true);
             const txn = await contract.withdraw(pipeAddresses);
             await txn.wait();
             await getAndSetFlowData(token);
         } catch (error) {
             console.error(error);
+        } finally {
+            setFetching(false);
         }
     };
 
@@ -404,7 +416,7 @@ const Valve = (props: IValveProps) => {
                                 <Button
                                     className="button flow-button"
                                     color="primary"
-                                    disabled={!isFullyAllocated || !inputFlowRate || Number(inputFlowRate) <= 0}
+                                    disabled={fetching || !isFullyAllocated || !inputFlowRate || Number(inputFlowRate) <= 0}
                                     variant="contained"
                                     onClick={() => createOrUpdateFlow()}
                                 >
@@ -413,7 +425,7 @@ const Valve = (props: IValveProps) => {
                                 <Button
                                     className="button flow-button"
                                     color="primary"
-                                    disabled={Number(totalUserFlowedBalance) <= 0}
+                                    disabled={fetching || Number(totalUserFlowedBalance) <= 0}
                                     variant="contained"
                                     onClick={() => withdrawFunds()}
                                 >
@@ -422,7 +434,7 @@ const Valve = (props: IValveProps) => {
                                 <Button
                                     className="button flow-button"
                                     color="secondary"
-                                    disabled={Number(userFlowRate) === 0}
+                                    disabled={fetching || Number(userFlowRate) === 0}
                                     variant="contained"
                                     onClick={() => deleteFlow()}
                                 >
@@ -430,6 +442,10 @@ const Valve = (props: IValveProps) => {
                                 </Button>
                             </div>
                         </div>
+                        {fetching && <div className="updating-flows-loading">
+                            <Typography className="updating-flow-text" variant="body1">Plunging...</Typography>
+                            <LinearProgress />
+                        </div>}
                     </div>
                 </div>
             )}
