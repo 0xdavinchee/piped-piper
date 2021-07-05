@@ -17,6 +17,7 @@ import { SafeMath } from "@openzeppelin/contracts/math/SafeMath.sol";
 import { SignedSafeMath } from "@openzeppelin/contracts/math/SignedSafeMath.sol";
 import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
 import { Int96SafeMath } from "@superfluid-finance/ethereum-contracts/contracts/utils/Int96SafeMath.sol";
+import { SafeCast } from "@openzeppelin/contracts/utils/SafeCast.sol";
 
 /// @author Piped-Piper ETHGlobal Hack Money Team
 /// @title Handles flow agreement creation with multiple users, aggregates this flow and redirects
@@ -31,6 +32,7 @@ contract SuperValve is SuperAppBase, AccessControl {
     using SignedSafeMath for int256;
     using Int96SafeMath for int96;
     using SafeMath for uint256;
+    using SafeCast for uint256;
 
     struct ReceiverData {
         address pipeRecipient;
@@ -40,7 +42,6 @@ contract SuperValve is SuperAppBase, AccessControl {
         ReceiverData[] receivers;
     }
     struct UpdateValveToPipeData {
-        bytes4 selector;
         ISuperfluid.Context context;
         int96 oldUserToValveFlowRate;
         int96 newUserToValveFlowRate;
@@ -53,6 +54,8 @@ contract SuperValve is SuperAppBase, AccessControl {
 
     address[] public validPipeAddresses; // private
     mapping(address => mapping(address => int96)) public userAllocations; // private
+    int256 public totalValveBalance;
+    uint256 public valveFlowRateLastUpdated;
 
     event NewPipeInflow(address _pipe, int96 _flowRate);
     event PipeInflowDeleted(address _pipe);
@@ -67,6 +70,8 @@ contract SuperValve is SuperAppBase, AccessControl {
     event FlowRateInfo(uint256 appAllowance, int96 safeFlowRate);
     event RealFlowRate(int96 flowRate);
     event EndFlowRate(int96 endFlowRate);
+    event ValveBalanceUpdated(int256 valveBalance);
+    event Withdrawal(uint256 withdrawalAmount);
     event Terminator();
 
     constructor(
@@ -101,14 +106,24 @@ contract SuperValve is SuperAppBase, AccessControl {
      * @dev Withdraws all your funds from all the different vaults/pipes.
      */
     function withdraw(address[] memory _pipeAddresses) public {
+        uint256 totalWithdrawalAmount;
         for (uint256 i; i < _pipeAddresses.length; i++) {
-            withdrawFromVault(_pipeAddresses[i], msg.sender);
+            uint256 pipeWithdrawAmount = withdrawFromPipeVault(_pipeAddresses[i], msg.sender);
+            totalWithdrawalAmount = totalWithdrawalAmount.add(pipeWithdrawAmount);
         }
+        int256 newValveBalance = totalValveBalance.sub(totalWithdrawalAmount.toInt256());
+
+        emit ValveBalanceUpdated(newValveBalance);
+        emit Withdrawal(totalWithdrawalAmount);
     }
 
     /** @dev Withdraws your funds from a single vault/pipe.
      */
-    function withdrawFromVault(address _pipeAddress, address _user) public validPipeAddress(_pipeAddress) {
+    function withdrawFromPipeVault(address _pipeAddress, address _user)
+        public
+        validPipeAddress(_pipeAddress)
+        returns (uint256 pipeWithdrawalAmount)
+    {
         IPipe pipe = IPipe(_pipeAddress);
         (, int96 valveToPipeFlowRate, , ) = cfa.getFlow(acceptedToken, address(this), _pipeAddress);
 
@@ -118,7 +133,7 @@ contract SuperValve is SuperAppBase, AccessControl {
             // before withdrawal)
             pipe.setPipeFlowData(valveToPipeFlowRate);
 
-            pipe.withdraw(previousFlowRate, _user);
+            pipeWithdrawalAmount = pipe.withdraw(previousFlowRate, _user);
         }
     }
 
@@ -130,11 +145,7 @@ contract SuperValve is SuperAppBase, AccessControl {
     function getUserTotalFlowedBalance(address _user) public view returns (int256 totalBalance, uint256 timestamp) {
         for (uint256 i; i < validPipeAddresses.length; i++) {
             int96 userToPipeFlowRate = getUserPipeFlowRate(_user, validPipeAddresses[i]);
-            int256 withdrawableFlowAmount = getUserPipeFlowBalance(
-                _user,
-                validPipeAddresses[i],
-                userToPipeFlowRate
-            );
+            int256 withdrawableFlowAmount = getUserPipeFlowBalance(_user, validPipeAddresses[i], userToPipeFlowRate);
             totalBalance = totalBalance.add(withdrawableFlowAmount);
         }
         timestamp = block.timestamp;
@@ -230,9 +241,45 @@ contract SuperValve is SuperAppBase, AccessControl {
         (oldUserToValveFlowRate, previousValveInflowRate) = abi.decode(_cbdata, (int96, int96));
     }
 
+    /** @dev Gets the total valve balance */
+    function getTotalValveBalance(int96 _flowRate) public view returns (int256, uint256) {
+        return (
+            totalValveBalance.add((block.timestamp.sub(valveFlowRateLastUpdated)).toInt256().mul(_flowRate)),
+            block.timestamp
+        );
+    }
+
     /**************************************************************************
      * Valve-To-Pipe CRUD Functions
      *************************************************************************/
+
+    /** @dev Modify multi flow function which is called after any modification of agreement. */
+    function _modifyMultiFlow(
+        bytes32 _agreementId,
+        bytes calldata _cbdata,
+        bytes calldata _ctx
+    ) internal returns (bytes memory newCtx) {
+        newCtx = _ctx;
+        ISuperfluid.Context memory sfContext = host.decodeCtx(_ctx);
+
+        Allocations memory userDataAllocations = _parseUserData(sfContext.userData);
+
+        // get the newly created/updated userToValve flow rate
+        (int96 oldUserToValveFlowRate, int96 previousValveInflowRate) = getCallbackData(_cbdata);
+
+        (int256 updatedValveBalance, ) = getTotalValveBalance(previousValveInflowRate);
+        // update the totalValveBalance, we add the existing total valveBalance to the change
+        // in time * the previousValveInflowRate
+        totalValveBalance = updatedValveBalance;
+        emit ValveBalanceUpdated(updatedValveBalance);
+
+        (, int96 newUserToValveFlowRate, , ) = cfa.getFlowByID(acceptedToken, _agreementId);
+        newCtx = _updateValveToPipesFlow(
+            userDataAllocations,
+            UpdateValveToPipeData(sfContext, oldUserToValveFlowRate, newUserToValveFlowRate, newCtx)
+        );
+    }
+
     /** @dev Creators or updates the valveToPipe flowRate depending on whether the user has an existing agreement.
      * We will update the state to reflect the new flow rate from the SuperValve to the Pipe as well
      * as the users' updated allocation data.
@@ -242,11 +289,13 @@ contract SuperValve is SuperAppBase, AccessControl {
         returns (bytes memory newCtx)
     {
         newCtx = data.ctx;
+        bytes4 selector;
 
         // in case of mfa, we underutlize the app allowance for simplicity
-        int96 safeFlowRate = data.newUserToValveFlowRate == 0
-            ? 0
-            : cfa.getMaximumFlowRateFromDeposit(acceptedToken, data.context.appAllowanceGranted.sub(1));
+        int96 safeFlowRate =
+            data.newUserToValveFlowRate == 0
+                ? 0
+                : cfa.getMaximumFlowRateFromDeposit(acceptedToken, data.context.appAllowanceGranted.sub(1));
         data.context.appAllowanceGranted = data.newUserToValveFlowRate == 0
             ? 0
             : cfa.getDepositRequiredForFlowRate(acceptedToken, safeFlowRate);
@@ -263,11 +312,8 @@ contract SuperValve is SuperAppBase, AccessControl {
             );
 
             // get previous valveToPipe flow rate
-            (, int96 previousValveToPipeFlowRate, , ) = cfa.getFlow(
-                acceptedToken,
-                address(this),
-                receiverData.pipeRecipient
-            );
+            (, int96 previousValveToPipeFlowRate, , ) =
+                cfa.getFlow(acceptedToken, address(this), receiverData.pipeRecipient);
 
             // if the user does not want to allocate anything to the pipe and no agreement exists currently,
             // we skip.
@@ -275,30 +321,34 @@ contract SuperValve is SuperAppBase, AccessControl {
                 continue;
             }
 
-            // get target allowance based on app allowance granted as well as percentage allocation
-            uint256 targetAllowance = data
-            .context
-            .appAllowanceGranted
-            .mul(uint256(receiverData.percentageAllocation))
-            .div(100);
+            // if an agreement exists between the valve and pipe, we just update the flow
+            if (previousValveToPipeFlowRate == 0) {
+                selector = cfa.createFlow.selector;
+            } else {
+                selector = cfa.updateFlow.selector;
+            }
 
-            int96 targetUserToPipeFlowRate = data.newUserToValveFlowRate == 0
-                ? 0
-                : cfa.getMaximumFlowRateFromDeposit(acceptedToken, targetAllowance);
+            // get target allowance based on app allowance granted as well as percentage allocation
+            uint256 targetAllowance =
+                data.context.appAllowanceGranted.mul(uint256(receiverData.percentageAllocation)).div(100);
+
+            int96 targetUserToPipeFlowRate =
+                data.newUserToValveFlowRate == 0
+                    ? 0
+                    : cfa.getMaximumFlowRateFromDeposit(acceptedToken, targetAllowance);
             data.newUserToValveFlowRate = data.newUserToValveFlowRate.sub(targetUserToPipeFlowRate, "");
 
             // get the old userToPipe flow rate (totalUserToValve * previousPctAlloc / 100%)
-            int96 oldUserToPipeFlowRate = mulDiv(
-                data.oldUserToValveFlowRate,
-                userAllocations[data.context.msgSender][receiverData.pipeRecipient],
-                ONE_HUNDRED_PERCENT
-            );
+            int96 oldUserToPipeFlowRate =
+                mulDiv(
+                    data.oldUserToValveFlowRate,
+                    userAllocations[data.context.msgSender][receiverData.pipeRecipient],
+                    ONE_HUNDRED_PERCENT
+                );
 
             // new flow rate subtracted by previous flow rate to get difference
-            int96 userToPipeFlowRateDifference = targetUserToPipeFlowRate.sub(
-                oldUserToPipeFlowRate,
-                "Int96: Error subtracting."
-            );
+            int96 userToPipeFlowRateDifference =
+                targetUserToPipeFlowRate.sub(oldUserToPipeFlowRate, "Int96: Error subtracting.");
 
             emit UpdateFlowInfo(
                 receiverData.pipeRecipient,
@@ -313,10 +363,8 @@ contract SuperValve is SuperAppBase, AccessControl {
             // update the user flow withdraw data in Pipe for accounting purposes
             IPipe(receiverData.pipeRecipient).setUserFlowWithdrawData(data.context.msgSender, oldUserToPipeFlowRate);
 
-            int96 newValveToPipeFlowRate = previousValveToPipeFlowRate.add(
-                userToPipeFlowRateDifference,
-                "Int96: Could not add."
-            );
+            int96 newValveToPipeFlowRate =
+                previousValveToPipeFlowRate.add(userToPipeFlowRateDifference, "Int96: Could not add.");
 
             IPipe(receiverData.pipeRecipient).setPipeFlowData(newValveToPipeFlowRate <= 0 ? 0 : newValveToPipeFlowRate);
 
@@ -324,7 +372,7 @@ contract SuperValve is SuperAppBase, AccessControl {
                 (newCtx, ) = host.callAgreementWithContext(
                     cfa,
                     abi.encodeWithSelector(
-                        data.selector,
+                        selector,
                         acceptedToken,
                         receiverData.pipeRecipient,
                         newValveToPipeFlowRate,
@@ -385,24 +433,7 @@ contract SuperValve is SuperAppBase, AccessControl {
         bytes calldata _cbdata,
         bytes calldata _ctx
     ) external override onlyHost returns (bytes memory newCtx) {
-        newCtx = _ctx;
-        ISuperfluid.Context memory sfContext = host.decodeCtx(_ctx);
-
-        Allocations memory userDataAllocations = _parseUserData(sfContext.userData);
-
-        // get the newly created/updated userToValve flow rate
-        (int96 oldUserToValveFlowRate, ) = getCallbackData(_cbdata);
-        (, int96 newUserToValveFlowRate, , ) = cfa.getFlowByID(acceptedToken, _agreementId);
-        newCtx = _updateValveToPipesFlow(
-            userDataAllocations,
-            UpdateValveToPipeData(
-                cfa.createFlow.selector,
-                sfContext,
-                oldUserToValveFlowRate,
-                newUserToValveFlowRate,
-                newCtx
-            )
-        );
+        newCtx = _modifyMultiFlow( _agreementId, _cbdata, _ctx);
     }
 
     /**
@@ -429,24 +460,7 @@ contract SuperValve is SuperAppBase, AccessControl {
         bytes calldata _cbdata,
         bytes calldata _ctx
     ) external override onlyHost returns (bytes memory newCtx) {
-        newCtx = _ctx;
-        ISuperfluid.Context memory sfContext = host.decodeCtx(_ctx);
-
-        Allocations memory userDataAllocations = _parseUserData(sfContext.userData);
-
-        // get the newly created/updated userToValve flow rate
-        (int96 oldUserToValveFlowRate, ) = getCallbackData(_cbdata);
-        (, int96 newUserToValveFlowRate, , ) = cfa.getFlowByID(acceptedToken, _agreementId);
-        newCtx = _updateValveToPipesFlow(
-            userDataAllocations,
-            UpdateValveToPipeData(
-                cfa.updateFlow.selector,
-                sfContext,
-                oldUserToValveFlowRate,
-                newUserToValveFlowRate,
-                newCtx
-            )
-        );
+        newCtx = _modifyMultiFlow(_agreementId, _cbdata, _ctx);
     }
 
     /**
@@ -476,24 +490,7 @@ contract SuperValve is SuperAppBase, AccessControl {
         bytes calldata _cbdata,
         bytes calldata _ctx
     ) external override returns (bytes memory newCtx) {
-        newCtx = _ctx;
-        ISuperfluid.Context memory sfContext = host.decodeCtx(_ctx);
-
-        Allocations memory userDataAllocations = _parseUserData(sfContext.userData);
-        emit Terminator();
-        // get the newly created/updated userToValve flow rate
-        (int96 oldUserToValveFlowRate, ) = getCallbackData(_cbdata);
-        (, int96 newUserToValveFlowRate, , ) = cfa.getFlowByID(acceptedToken, _agreementId);
-        newCtx = _updateValveToPipesFlow(
-            userDataAllocations,
-            UpdateValveToPipeData(
-                cfa.updateFlow.selector,
-                sfContext,
-                oldUserToValveFlowRate,
-                newUserToValveFlowRate,
-                newCtx
-            )
-        );
+        newCtx = _modifyMultiFlow( _agreementId, _cbdata, _ctx);
     }
 
     /**************************************************************************

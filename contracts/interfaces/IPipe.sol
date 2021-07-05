@@ -5,7 +5,7 @@ interface IPipe {
     /**
      * @dev Withdraws funds from the vault and any existing flows to the caller.
      */
-    function withdraw(int96 _flowRate, address _user) external;
+    function withdraw(int96 _flowRate, address _user) external returns (uint256);
 
     /**
      * @dev Get the balance that currently belongs to the pipe.
