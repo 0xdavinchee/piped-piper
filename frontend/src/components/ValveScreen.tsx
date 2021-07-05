@@ -335,7 +335,6 @@ const Valve = (props: IValveProps) => {
             const flowRates = await Promise.all(
                 pipeAddresses.map(x => contract.getUserPipeFlowRate(props.userAddress, x)),
             );
-            console.log(allocations);
             const formattedFlowRates = flowRates.map(x => x.toNumber() / 10 ** 18);
             const userPipeData = pipeAddresses.map((x, i) => ({
                 pipeAddress: x,
@@ -443,7 +442,7 @@ const Valve = (props: IValveProps) => {
                             </div>
                         </div>
                         {fetching && <div className="updating-flows-loading">
-                            <Typography className="updating-flow-text" variant="body1">Plunging...</Typography>
+                            <Typography className="updating-flow-text" variant="body1">Plumbing...</Typography>
                             <LinearProgress />
                         </div>}
                     </div>
