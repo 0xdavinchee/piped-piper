@@ -269,7 +269,7 @@ const Valve = (props: IValveProps) => {
         (async () => {
             const contract = initializeContract(true, address);
             if(pipeAddresses.length === 0 || !contract) return;
-            const promises = await Promise.all(pipeAddresses.map(x => contract.getUserPipeFlowRate(props.userAddress, x)));
+            const promises = await Promise.all(pipeAddresses.map(x => contract.getUserPipeAllocation(props.userAddress, x)));
             const userPipeData = pipeAddresses.map((x, i) => ({pipeAddress: x, name: props.currency + " Vault " + i, percentage: promises[i].toString() }));
             console.log("userPipeData", userPipeData);
             setUserPipeData(userPipeData);
@@ -345,7 +345,7 @@ const Valve = (props: IValveProps) => {
                             <Button
                                 className="button flow-button"
                                 color="primary"
-                                disabled={!isFullyAllocated || !inputFlowRate}
+                                disabled={!isFullyAllocated || !inputFlowRate || Number(inputFlowRate) <= 0}
                                 variant="contained"
                                 onClick={() => createOrUpdateFlow()}
                             >
