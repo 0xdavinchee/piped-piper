@@ -19,15 +19,6 @@ interface IFlowData {
     readonly sender: string;
 }
 
-// TODO: this should come from on chain, that is, a subgraph which gets us a list of the valid
-// vault pipe addresses, in addition, we should probably have name and stuff on the VaultPipe contract.
-// TODO: figure out why we cannot stop flows - why isn't this wokring.
-const PIPE_1 = "0x37e465Bfb567a9081c962676ed604Cf9adD7dcfA";
-const PIPE_2 = "0x23aA18C5a88Abf824d43375c03D0029A332705C8";
-const PIPES: IPipeData[] = [
-    { pipeAddress: PIPE_1, name: "fUSDC Vault 1" },
-    { pipeAddress: PIPE_2, name: "fUSDC Vault 2" },
-];
 const FULLY_ALLOCATED = 100;
 
 const Valve = (props: IValveProps) => {
@@ -47,9 +38,7 @@ const Valve = (props: IValveProps) => {
     // User Flow State
     const [inputFlowRate, setInputFlowRate] = useState("");
     const [userFlowRate, setUserFlowRate] = useState("");
-    const [userPipeData, setUserPipeData] = useState<IUserPipeData[]>([
-        ...PIPES.map(x => ({ pipeAddress: x.pipeAddress, name: x.name, percentage: "" })),
-    ]);
+    const [userPipeData, setUserPipeData] = useState<IUserPipeData[]>([]);
     const [userTotalFlowedBalance, setUserTotalFlowedBalance] = useState({
         totalFlowed: 0,
         timestamp: 0,
@@ -81,7 +70,7 @@ const Valve = (props: IValveProps) => {
     };
 
     const getRelevantFlowData = async (sf: any, tokenAddress: string) => {
-        if (sf == null) return;
+        if (sf == null || pipeAddresses.length === 0) return;
         const inflowData = await sf.cfa.listFlows({ superToken: tokenAddress, account: props.userAddress });
         console.log("inflowData", inflowData);
         const userToValveFlow = await sf.cfa.getFlow({
@@ -93,12 +82,12 @@ const Valve = (props: IValveProps) => {
         const flowData1 = await sf.cfa.getFlow({
             superToken: tokenAddress,
             sender: address,
-            receiver: PIPE_1,
+            receiver: pipeAddresses[0],
         });
         const flowData2 = await sf.cfa.getFlow({
             superToken: tokenAddress,
             sender: address,
-            receiver: PIPE_2,
+            receiver: pipeAddresses[1],
         });
         console.log("flowData1", flowData1);
         console.log("flowData2", flowData2);
@@ -275,6 +264,18 @@ const Valve = (props: IValveProps) => {
             setLoading(false);
         })();
     }, [sf, token]);
+
+    useEffect(() => {
+        (async () => {
+            const contract = initializeContract(true, address);
+            if(pipeAddresses.length === 0 || !contract) return;
+            const promises = await Promise.all(pipeAddresses.map(x => contract.getUserPipeFlowRate(props.userAddress, x)));
+            const userPipeData = pipeAddresses.map((x, i) => ({pipeAddress: x, name: props.currency + " Vault " + i, percentage: promises[i].toString() }));
+            console.log("userPipeData", userPipeData);
+            setUserPipeData(userPipeData);
+        })();
+        
+    }, [pipeAddresses, address]);
 
     return (
         <Container maxWidth="sm">
