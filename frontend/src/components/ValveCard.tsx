@@ -11,10 +11,6 @@ const ValveCard = ({ valveData }: { valveData: IValveData }) => {
                 <img src={valveData.image_url} className="valve-card-currency-img" alt="currency-logo" />
                 <div className="valve-card-text-container">
                     <Typography variant="h5">{valveData.currency}</Typography>
-                    <Typography variant="h6">Total Flowed</Typography>
-                    <Typography variant="body2" color="textSecondary">
-                        {"$1,000,000"}
-                    </Typography>
                 </div>
             </CardContent>
         </Card>

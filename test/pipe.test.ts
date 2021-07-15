@@ -41,18 +41,6 @@ const getCreateUpdateFlowUserData = (userPipeData: IUserPipeData[]) => {
 
 const setup = async () => {
     const { deployer } = await getNamedAccounts();
-
-    await deployFramework((x: any) => console.error("error: ", x), { web3: (global as any).web3, from: deployer });
-    await deployTestToken((x: any) => console.error("error: ", x), [":", "fDAI"], {
-        web3: (global as any).web3,
-        from: deployer,
-    });
-    await deploySuperToken((x: any) => console.error("error: ", x), [":", "fDAI"], {
-        web3: (global as any).web3,
-        from: deployer,
-    });
-
-    const users = await getUnnamedAccounts();
     await hre.network.provider.request({
         method: "hardhat_impersonateAccount",
         params: [testAddress],
@@ -114,9 +102,18 @@ const setup = async () => {
 // testing withdrawals
 
 describe("Pipe", () => {
-    before(() => {
-        // setup framework here
-        // snapshot of the blockchain and rollback
+    before(async () => {
+        const { deployer } = await getNamedAccounts();
+
+        await deployFramework((x: any) => console.error("error: ", x), { web3: (global as any).web3, from: deployer });
+        await deployTestToken((x: any) => console.error("error: ", x), [":", "fDAI"], {
+            web3: (global as any).web3,
+            from: deployer,
+        });
+        await deploySuperToken((x: any) => console.error("error: ", x), [":", "fDAI"], {
+            web3: (global as any).web3,
+            from: deployer,
+        });
     });
 
     it.skip("Should be able to create flow.", async () => {
@@ -152,18 +149,14 @@ describe("Pipe", () => {
             ]),
         });
 
-        expect((await SuperValve.getUserPipeFlowRate(deployer.address, VaultPipe.address)).toString()).to.eq(
-            monthlyRateToSeconds(75).toString(),
-        );
-        expect((await SuperValve.getUserPipeFlowRate(deployer.address, VaultPipe2.address)).toString()).to.eq(
-            monthlyRateToSeconds(75).toString(),
-        );
+        // we must check less than or equal as we set the flow rate based on `getMaximumFlowRateFromDeposit`
+        expect(
+            Number((await SuperValve.getUserPipeFlowRate(deployer.address, VaultPipe.address)).toString()),
+        ).to.be.lessThanOrEqual(Number(monthlyRateToSeconds(75).toString()));
+        expect(
+            Number((await SuperValve.getUserPipeFlowRate(deployer.address, VaultPipe2.address)).toString()),
+        ).to.be.lessThanOrEqual(Number(monthlyRateToSeconds(75).toString()));
     });
 
-    it("Should be able to update a flow to the two pipes.", async () => {});
-
-    // it("Should properly handle creation of a new flow amounts", async () => {
-    //     const flowRate = monthlyRateToSeconds(10);
-    //     const { fundedUser, fUSDCx, Pipe } = await setup();
-    // });
+    // it("Should be able to update a flow to the two pipes.", async () => {});
 });

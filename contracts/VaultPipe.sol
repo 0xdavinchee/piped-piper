@@ -19,7 +19,7 @@ contract VaultPipe is Pipe {
      * by utilizing the external contract's interface.
      */
     function _depositToVault(uint256 _amount, address _sender) public override {
-        bool success = acceptedToken.transfer(vault, _amount);
+        bool success = acceptedToken.transfer(address(vault), _amount);
         require(success, "VaultPipe: Deposit transfer failed.");
         vault.depositTokens(_amount, _sender);
     }
