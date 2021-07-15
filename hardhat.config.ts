@@ -3,7 +3,7 @@ import "hardhat-gas-reporter";
 import "solidity-coverage";
 import "hardhat-deploy";
 import "hardhat-deploy-ethers";
-import "@nomiclabs/hardhat-etherscan";
+import "@nomiclabs/hardhat-web3";
 
 import "./tasks/accounts";
 import "./tasks/clean";
