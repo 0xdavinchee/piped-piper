@@ -11,7 +11,12 @@ const func: DeployFunction = async (hre: HardhatRuntimeEnvironment) => {
 
     await deploy("SuperValve", {
         from: deployer,
-        args: [process.env.HOST_ADDRESS, process.env.CFA_ADDRESS, fUSDCx, []],
+        args: [
+            process.env.HOST_ADDRESS,
+            process.env.CFA_ADDRESS,
+            fUSDCx,
+            ["0x7A66059Af18D5a22a0D17e9F7f2c83e810de5bA1", "0x28E610823f7342c0eCd78bc56849f060921dd4BD"],
+        ],
         log: true,
         gasLimit: 9000000,
     });
