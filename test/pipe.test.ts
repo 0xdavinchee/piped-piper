@@ -19,6 +19,7 @@ describe("SuperValve Tests", () => {
     let dai: any;
     let daix: any;
     let names: { [address: string]: string } = {};
+    let users: string[] = [];
 
     /**************************************************************************
      * Before Hooks
@@ -29,15 +30,15 @@ describe("SuperValve Tests", () => {
             web3: (global as any).web3,
             from: deployer,
         });
-    });
-
-    beforeEach(async () => {
-        const { deployer } = await getNamedAccounts();
         const [Alice, Bob] = await getUnnamedAccounts();
         names[deployer] = "Deployer";
         names[Alice] = "Alice";
         names[Bob] = "Bob";
-        const users = [deployer, Alice, Bob];
+        users = [deployer, Alice, Bob];
+    });
+
+    beforeEach(async () => {
+        const { deployer } = await getNamedAccounts();
 
         await deployTestToken((x: any) => errorHandler("TestToken", x), [":", "fDAI"], {
             web3: (global as any).web3,
@@ -103,20 +104,22 @@ describe("SuperValve Tests", () => {
         const fakeVaultFactory = await ethers.getContractFactory("FakeVault");
         const vaultPipeFactory = await ethers.getContractFactory("VaultPipe");
         const superValveFactory = await ethers.getContractFactory("SuperValve");
+
         const fakeVault = await fakeVaultFactory.deploy(sf.tokens.fDAI.address, "fDAI Vault 1 Token", "fDAI");
         const vaultPipe = await vaultPipeFactory.deploy(sf.tokens.fDAIx.address, fakeVault.address);
         const fakeVault2 = await fakeVaultFactory.deploy(sf.tokens.fDAI.address, "fDAI Vault 2 Token", "fDAI");
         const vaultPipe2 = await vaultPipeFactory.deploy(sf.tokens.fDAIx.address, fakeVault2.address);
-        await fakeVault.deployed();
-        await vaultPipe.deployed();
-        await fakeVault2.deployed();
-        await vaultPipe2.deployed();
         const superValve = await superValveFactory.deploy(
             sf.host.address,
             sf.agreements.cfa.address,
             sf.tokens.fDAIx.address,
             [vaultPipe.address, vaultPipe2.address],
         );
+
+        await fakeVault.deployed();
+        await vaultPipe.deployed();
+        await fakeVault2.deployed();
+        await vaultPipe2.deployed();
         await superValve.deployed();
 
         names[superValve.address] = "SuperValve";
@@ -151,7 +154,7 @@ describe("SuperValve Tests", () => {
         return results;
     };
 
-    const checkFlowRateResults = (monthlyFlowRate: number, results: BigNumber[], userData: string) => {
+    const checkUserFlowRateResults = (monthlyFlowRate: number, results: BigNumber[], userData: string) => {
         const data = decodeUserData(userData);
         const percentages = data[1];
         for (let i = 0; i < results.length; i++) {
@@ -206,7 +209,7 @@ describe("SuperValve Tests", () => {
         return results;
     };
 
-    describe("Admin Permissions Tests", () => {
+    describe.skip("Admin Permissions Tests", () => {
         it("Should allow admin to add/remove pipe addresses", async () => {
             const { SuperValve, users } = await setup();
             await expect(SuperValve.addPipeAddress(users[3].address))
@@ -255,7 +258,7 @@ describe("SuperValve Tests", () => {
                 150,
                 userData,
             );
-            checkFlowRateResults(150, results, userData);
+            checkUserFlowRateResults(150, results, userData);
         });
 
         it("Should be able to create a flow into two pipes.", async () => {
@@ -274,7 +277,7 @@ describe("SuperValve Tests", () => {
                 150,
                 userData,
             );
-            checkFlowRateResults(150, results, userData);
+            checkUserFlowRateResults(150, results, userData);
         });
 
         it("Should allow multiple users to create flows into multiple pipes.", async () => {});
@@ -298,7 +301,7 @@ describe("SuperValve Tests", () => {
                 150,
                 userData,
             );
-            checkFlowRateResults(150, results, userData);
+            checkUserFlowRateResults(150, results, userData);
 
             // increase flow rate
             results = await createOrUpdateFlow(
@@ -309,7 +312,7 @@ describe("SuperValve Tests", () => {
                 250,
                 userData,
             );
-            checkFlowRateResults(250, results, userData);
+            checkUserFlowRateResults(250, results, userData);
 
             // decrease flow rate
             results = await createOrUpdateFlow(
@@ -320,7 +323,7 @@ describe("SuperValve Tests", () => {
                 50,
                 userData,
             );
-            checkFlowRateResults(50, results, userData);
+            checkUserFlowRateResults(50, results, userData);
 
             // increase flow rate
             results = await createOrUpdateFlow(
@@ -331,7 +334,7 @@ describe("SuperValve Tests", () => {
                 550,
                 userData,
             );
-            checkFlowRateResults(550, results, userData);
+            checkUserFlowRateResults(550, results, userData);
         });
 
         it("Should be able to change their allocations with flow rate staying constant.", async () => {
@@ -351,7 +354,7 @@ describe("SuperValve Tests", () => {
                 150,
                 userData,
             );
-            checkFlowRateResults(150, results, userData);
+            checkUserFlowRateResults(150, results, userData);
 
             userData = getCreateUpdateFlowUserData([
                 { pipeAddress: VaultPipe.address, percentage: "30" },
@@ -366,7 +369,7 @@ describe("SuperValve Tests", () => {
                 150,
                 userData,
             );
-            checkFlowRateResults(150, results, userData);
+            checkUserFlowRateResults(150, results, userData);
         });
 
         it("Should be able to remove allocation completely to one pipe.", async () => {
@@ -386,7 +389,7 @@ describe("SuperValve Tests", () => {
                 150,
                 userData,
             );
-            checkFlowRateResults(150, results, userData);
+            checkUserFlowRateResults(150, results, userData);
 
             // remove allocation completely from one pipe
             userData = getCreateUpdateFlowUserData([
@@ -402,7 +405,7 @@ describe("SuperValve Tests", () => {
                 150,
                 userData,
             );
-            checkFlowRateResults(150, results, userData);
+            checkUserFlowRateResults(150, results, userData);
         });
 
         it("Should be able to change their allocations and their flow rate.", async () => {
@@ -422,7 +425,7 @@ describe("SuperValve Tests", () => {
                 150,
                 userData,
             );
-            checkFlowRateResults(150, results, userData);
+            checkUserFlowRateResults(150, results, userData);
 
             // remove allocation completely from one pipe
             userData = getCreateUpdateFlowUserData([
@@ -438,8 +441,12 @@ describe("SuperValve Tests", () => {
                 342,
                 userData,
             );
-            checkFlowRateResults(342, results, userData);
+            checkUserFlowRateResults(342, results, userData);
         });
+    });
+
+    describe("Delete Flow Tests", () => {
+
     });
     /**************************************************************************
      * Delete Test Cases
@@ -449,3 +456,8 @@ describe("SuperValve Tests", () => {
      * Withdraw Test Cases
      *************************************************************************/
 });
+
+// TODO: Should not allow create flow rate where flow rate is 0
+// Should not allow create flow rate where allocations don't add up to 100 (greater or less than)
+// Should not allow update flow rate where flow rate is 0
+// Should not allow update flow rate where allocations don't add up to 100 (greater or less than)
