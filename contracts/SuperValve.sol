@@ -316,7 +316,13 @@ contract SuperValve is SuperAppBase, AccessControl {
 
         emit FlowRateInfo(data.context.appAllowanceGranted, safeFlowRate);
         emit RealFlowRate(data.newUserToValveFlowRate);
-
+        {        
+        int96 totalPercentage;
+        for (uint256 i = 0; i < allocations.receivers.length; i++) {
+            totalPercentage += allocations.receivers[i].percentageAllocation;
+        }
+        require(totalPercentage == 100, "SuperValve: Your allocations must add up to 100%.");
+        }
         for (uint256 i = 0; i < allocations.receivers.length; i++) {
             ReceiverData memory receiverData = allocations.receivers[i];
             int96 newPercentage = receiverData.percentageAllocation;
