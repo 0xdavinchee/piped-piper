@@ -74,9 +74,12 @@ describe("SuperValve Tests", () => {
         daix = sf.tokens.fDAIx;
 
         console.log("Mint DAI and approve fDAIx allowance for users...");
-        for (let i = 0; i < userAddresses.concat(deployer).length; i++) {
-            await dai.mint(deployer, ethers.utils.parseUnits("1000").toString(), { from: userAddresses[i] });
-            await dai.approve(sf.tokens.fDAIx.address, ethers.utils.parseUnits("1000").toString(), { from: userAddresses[i] });
+        const adminAndUsers = userAddresses.concat(deployer);
+        for (let i = 0; i < adminAndUsers.length; i++) {
+            const address = adminAndUsers[i];
+            await dai.mint(address, ethers.utils.parseUnits("1000").toString(), { from: deployer });
+            await dai.approve(sf.tokens.fDAIx.address, ethers.utils.parseUnits("1000").toString(), { from: address });
+            await sf.tokens.fDAIx.upgrade(ethers.utils.parseUnits("1000").toString(), { from: address });
         }
         console.log("\n************** Superfluid Framework Setup Complete **************\n");
 
@@ -247,7 +250,6 @@ describe("SuperValve Tests", () => {
 
     describe("Create Flow Tests", () => {
         it("Should be able to create flow to just a single pipe.", async () => {
-            await sf.tokens.fDAIx.upgrade(ethers.utils.parseUnits("1000").toString());
             const userData = getCreateUpdateFlowUserData([
                 { pipeAddress: admin.VaultPipe.address, percentage: "100" },
                 { pipeAddress: admin.VaultPipe2.address, percentage: "0" },
@@ -265,7 +267,6 @@ describe("SuperValve Tests", () => {
         });
 
         it("Should be able to create a flow into two pipes.", async () => {
-            await sf.tokens.fDAIx.upgrade(ethers.utils.parseUnits("1000").toString());
             const userData = getCreateUpdateFlowUserData([
                 { pipeAddress: admin.VaultPipe.address, percentage: "50" },
                 { pipeAddress: admin.VaultPipe2.address, percentage: "50" },
@@ -287,7 +288,6 @@ describe("SuperValve Tests", () => {
 
     describe("Update Flow Tests", () => {
         it("Should be able to update increase and decrease flow rate.", async () => {
-            await sf.tokens.fDAIx.upgrade(ethers.utils.parseUnits("1000").toString());
             const userData = getCreateUpdateFlowUserData([
                 { pipeAddress: admin.VaultPipe.address, percentage: "50" },
                 { pipeAddress: admin.VaultPipe2.address, percentage: "50" },
@@ -339,7 +339,6 @@ describe("SuperValve Tests", () => {
         });
 
         it("Should be able to change their allocations with flow rate staying constant.", async () => {
-            await sf.tokens.fDAIx.upgrade(ethers.utils.parseUnits("1000").toString());
             let userData = getCreateUpdateFlowUserData([
                 { pipeAddress: admin.VaultPipe.address, percentage: "50" },
                 { pipeAddress: admin.VaultPipe2.address, percentage: "50" },
@@ -373,7 +372,6 @@ describe("SuperValve Tests", () => {
         });
 
         it("Should be able to remove allocation completely to one pipe.", async () => {
-            await sf.tokens.fDAIx.upgrade(ethers.utils.parseUnits("1000").toString());
             let userData = getCreateUpdateFlowUserData([
                 { pipeAddress: admin.VaultPipe.address, percentage: "50" },
                 { pipeAddress: admin.VaultPipe2.address, percentage: "50" },
@@ -408,7 +406,6 @@ describe("SuperValve Tests", () => {
         });
 
         it("Should be able to change their allocations and their flow rate.", async () => {
-            await sf.tokens.fDAIx.upgrade(ethers.utils.parseUnits("1000").toString());
             let userData = getCreateUpdateFlowUserData([
                 { pipeAddress: admin.VaultPipe.address, percentage: "50" },
                 { pipeAddress: admin.VaultPipe2.address, percentage: "50" },
