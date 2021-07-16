@@ -27,11 +27,12 @@ describe("SuperValve Tests", () => {
     let daix: any;
     let names: { [address: string]: string } = {};
     let userAddresses: string[] = [];
-    let admin: IUser;
     let superValveAddress: string;
 
     /** Alice and Bob  */
-    let users: IUser[];
+    let Admin: IUser;
+    let Alice: IUser;
+    let Bob: IUser;
 
     /**************************************************************************
      * Before Hooks
@@ -46,19 +47,17 @@ describe("SuperValve Tests", () => {
         names[deployer] = "Deployer";
         names[Alice] = "Alice";
         names[Bob] = "Bob";
-        userAddresses = [Alice, Bob];
+        userAddresses = [deployer, Alice, Bob];
     });
 
     beforeEach(async () => {
-        const { deployer } = await getNamedAccounts();
-
         await deployTestToken((x: any) => errorHandler("TestToken", x), [":", "fDAI"], {
             web3: (global as any).web3,
-            from: deployer,
+            from: userAddresses[0],
         });
         await deploySuperToken((x: any) => errorHandler("SuperToken", x), [":", "fDAI"], {
             web3: (global as any).web3,
-            from: deployer,
+            from: userAddresses[0],
         });
 
         sf = new SuperfluidSDK.Framework({
@@ -74,10 +73,9 @@ describe("SuperValve Tests", () => {
         daix = sf.tokens.fDAIx;
 
         console.log("Mint DAI and approve fDAIx allowance for users...");
-        const adminAndUsers = userAddresses.concat(deployer);
-        for (let i = 0; i < adminAndUsers.length; i++) {
-            const address = adminAndUsers[i];
-            await dai.mint(address, ethers.utils.parseUnits("1000").toString(), { from: deployer });
+        for (let i = 0; i < userAddresses.length; i++) {
+            const address = userAddresses[i];
+            await dai.mint(address, ethers.utils.parseUnits("1000").toString(), { from: userAddresses[0] });
             await dai.approve(sf.tokens.fDAIx.address, ethers.utils.parseUnits("1000").toString(), { from: address });
             await sf.tokens.fDAIx.upgrade(ethers.utils.parseUnits("1000").toString(), { from: address });
         }
@@ -117,9 +115,10 @@ describe("SuperValve Tests", () => {
             VaultPipe2: vaultPipe2 as VaultPipe,
             SuperValve: superValve as SuperValve,
         };
-        admin = await setupUser(deployer, contracts);
-        users = await setupUsers(userAddresses, contracts);
-        
+
+        Admin = await setupUser(userAddresses[0], contracts);
+        Alice = await setupUser(userAddresses[1], contracts);
+        Bob = await setupUser(userAddresses[2], contracts);
     });
 
     /**************************************************************************
@@ -128,6 +127,7 @@ describe("SuperValve Tests", () => {
     const errorHandler = (type: string, err: any) => {
         if (err) console.error("Deploy " + type + " Error: ", err);
     };
+
     const monthlyRateToSeconds = (monthlyRate: number) => {
         const days = 30;
         const hours = days * 24;
@@ -140,12 +140,13 @@ describe("SuperValve Tests", () => {
 
     const toNum = (x: BigNumber) => Number(x.toString());
 
-    const getCreateUpdateFlowUserData = (userPipeData: IUserPipeData[]) => {
+    const getModifyFlowUserData = (userPipeData: IUserPipeData[]) => {
         return encoder.encode(
             ["address[]", "int96[]"],
             [userPipeData.map(x => x.pipeAddress), userPipeData.map(x => formatPercentage(x.percentage))],
         );
     };
+
     const decodeUserData = (encodedData: string) => {
         return encoder.decode(["address[]", "int96[]"], encodedData);
     };
@@ -155,24 +156,25 @@ describe("SuperValve Tests", () => {
         userAddress: string,
         pipeAddresses: string[],
     ) => {
-        console.log("****************** User to Pipe Flow Rate(s) ******************");
-        const promises = pipeAddresses.map(x => superValve.getUserPipeFlowRate(userAddress, x));
-        const results = await Promise.all(promises);
-        for (let i = 0; i < pipeAddresses.length; i++) {
-            console.log(names[userAddress] + " to " + names[pipeAddresses[i]] + " flow rate: ", toNum(results[i]));
-        }
-        return results;
     };
 
-    const checkUserFlowRateResults = (monthlyFlowRate: number, results: BigNumber[], userData: string) => {
+    const checkUserFlowRateResults = async (
+        monthlyFlowRate: number,
+        results: BigNumber[],
+        userData: string,
+        userAddress: string,
+    ) => {
         const data = decodeUserData(userData);
+        const pipeAddresses: string[] = data[0];
         const percentages = data[1];
+        console.log("****************** User to Pipe Flow Rate(s) ******************");
         for (let i = 0; i < results.length; i++) {
             const flowRateAllocation = monthlyFlowRate * (toNum(percentages[i]) / 100);
             console.log(
-                "Expect: ",
+                "Expect",
+                names[userAddress] + " to " + names[pipeAddresses[i]] + " flow rate:",
                 toNum(results[i]),
-                " to be less than or equal to ",
+                "to be less than or equal to",
                 monthlyRateToSeconds(flowRateAllocation),
             );
 
@@ -183,66 +185,82 @@ describe("SuperValve Tests", () => {
         console.log("******************************************************\n");
     };
 
-    /** Creates a flow from sender to receiver of monthly flow rate and
+    /** Modifies flow from sender to receiver of monthly flow rate and
      * the receiver (super app) redirects these flows to multiple pipes.
      * This function returns an array containing information about the
      * resulting flow rates into the different pipes.
      */
-    const createOrUpdateFlow = async (
+    const modifyFlow = async (
         func: any,
         superValve: SuperValve,
         sender: string,
         receiver: string,
-        monthlyFlowRate: number,
         data: string,
+        monthlyFlowRate?: number,
     ) => {
-        const formattedFlowRate = ethers.utils.formatUnits(monthlyRateToSeconds(monthlyFlowRate));
-        const type = func === sf.cfa.createFlow ? "Create" : "Update";
+        const formattedFlowRate = monthlyFlowRate
+            ? ethers.utils.formatUnits(monthlyRateToSeconds(monthlyFlowRate))
+            : "";
+        const type = monthlyFlowRate == null ? "Delete" : func === sf.cfa.createFlow ? "Create" : "Update";
         console.log(`\n****************** ${type} Flow Test ******************`);
-        console.log(
-            `${type} flow from ${names[sender]} to ${names[receiver]} at a monthly flowRate of ${formattedFlowRate} fDAIx/s.`,
-        );
+        const message =
+            `${type} flow from ${names[sender]} to ${names[receiver]}` + monthlyFlowRate
+                ? ` at a flowRate of ${formattedFlowRate} fDAIx/s.`
+                : ".";
+        console.log(message);
         try {
-            await func({
-                superToken: sf.tokens.fDAIx.address,
-                sender: sender,
-                receiver: receiver,
-                flowRate: monthlyRateToSeconds(monthlyFlowRate),
-                userData: data,
-            });
+            if (monthlyFlowRate) {
+                await func({
+                    superToken: sf.tokens.fDAIx.address,
+                    sender,
+                    receiver,
+                    flowRate: monthlyRateToSeconds(monthlyFlowRate),
+                    userData: data,
+                });
+            } else {
+                await func({
+                    superToken: sf.tokens.fDAIx.address,
+                    sender,
+                    receiver,
+                    userData: data,
+                });
+            }
         } catch (err) {
             console.error(`${type} Flow Error: ${err}`);
         }
+
         const userData = decodeUserData(data);
-        const results = printOutUserToPipeFlowRates(superValve, sender, userData[0]);
+        const pipeAddresses: string[] = userData[0];
+        const promises = pipeAddresses.map(x => superValve.getUserPipeFlowRate(sender, x));
+        const results = await Promise.all(promises);
 
         return results;
     };
 
     describe.skip("Admin Permissions Tests", () => {
         it("Should allow admin to add/remove pipe addresses", async () => {
-            await expect(admin.SuperValve.addPipeAddress(users[1].address))
-                .to.emit(admin.SuperValve, "NewPipeAddress")
-                .withArgs(users[1].address);
-            await expect(admin.SuperValve.removePipeAddress(users[1].address))
-                .to.emit(admin.SuperValve, "RemovedPipeAddress")
-                .withArgs(users[1].address);
+            await expect(Admin.SuperValve.addPipeAddress(Alice.address))
+                .to.emit(Admin.SuperValve, "NewPipeAddress")
+                .withArgs(Alice.address);
+            await expect(Admin.SuperValve.removePipeAddress(Alice.address))
+                .to.emit(Admin.SuperValve, "RemovedPipeAddress")
+                .withArgs(Alice.address);
         });
 
         it("Should not allow adding/removing invalid pipe addresses.", async () => {
-            await expect(admin.SuperValve.addPipeAddress(admin.VaultPipe2.address)).to.revertedWith(
+            await expect(Admin.SuperValve.addPipeAddress(Admin.VaultPipe2.address)).to.revertedWith(
                 "SuperValve: This pipe address is already a valid pipe address.",
             );
-            await expect(admin.SuperValve.removePipeAddress(users[1].address)).to.revertedWith(
+            await expect(Admin.SuperValve.removePipeAddress(Alice.address)).to.revertedWith(
                 "SuperValve: This pipe address is not a valid pipe address.",
             );
         });
 
         it("Should not allow non admin to add/remove pipe addresses", async () => {
-            await expect(users[0].SuperValve.addPipeAddress(users[1].address)).to.revertedWith(
+            await expect(Bob.SuperValve.addPipeAddress(Alice.address)).to.revertedWith(
                 "SuperValve: You don't have permissions for this action.",
             );
-            await expect(users[0].SuperValve.removePipeAddress(admin.VaultPipe.address)).to.revertedWith(
+            await expect(Bob.SuperValve.removePipeAddress(Admin.VaultPipe.address)).to.revertedWith(
                 "SuperValve: You don't have permissions for this action.",
             );
         });
@@ -250,198 +268,237 @@ describe("SuperValve Tests", () => {
 
     describe("Create Flow Tests", () => {
         it("Should be able to create flow to just a single pipe.", async () => {
-            const userData = getCreateUpdateFlowUserData([
-                { pipeAddress: admin.VaultPipe.address, percentage: "100" },
-                { pipeAddress: admin.VaultPipe2.address, percentage: "0" },
+            const userData = getModifyFlowUserData([
+                { pipeAddress: Admin.VaultPipe.address, percentage: "100" },
+                { pipeAddress: Admin.VaultPipe2.address, percentage: "0" },
             ]);
 
-            const results = await createOrUpdateFlow(
+            const results = await modifyFlow(
                 sf.cfa.createFlow,
-                admin.SuperValve,
-                admin.address,
+                Admin.SuperValve,
+                Admin.address,
                 superValveAddress,
-                150,
                 userData,
+                150,
             );
-            checkUserFlowRateResults(150, results, userData);
+            checkUserFlowRateResults(150, results, userData, Admin.address);
         });
 
         it("Should be able to create a flow into two pipes.", async () => {
-            const userData = getCreateUpdateFlowUserData([
-                { pipeAddress: admin.VaultPipe.address, percentage: "50" },
-                { pipeAddress: admin.VaultPipe2.address, percentage: "50" },
+            const userData = getModifyFlowUserData([
+                { pipeAddress: Admin.VaultPipe.address, percentage: "50" },
+                { pipeAddress: Admin.VaultPipe2.address, percentage: "50" },
             ]);
 
-            const results = await createOrUpdateFlow(
+            const results = await modifyFlow(
                 sf.cfa.createFlow,
-                admin.SuperValve,
-                admin.address,
+                Admin.SuperValve,
+                Admin.address,
                 superValveAddress,
-                150,
                 userData,
+                150,
             );
-            checkUserFlowRateResults(150, results, userData);
+            checkUserFlowRateResults(150, results, userData, Admin.address);
         });
-
-        it("Should allow multiple users to create flows into multiple pipes.", async () => {});
     });
 
     describe("Update Flow Tests", () => {
         it("Should be able to update increase and decrease flow rate.", async () => {
-            const userData = getCreateUpdateFlowUserData([
-                { pipeAddress: admin.VaultPipe.address, percentage: "50" },
-                { pipeAddress: admin.VaultPipe2.address, percentage: "50" },
+            const userData = getModifyFlowUserData([
+                { pipeAddress: Admin.VaultPipe.address, percentage: "50" },
+                { pipeAddress: Admin.VaultPipe2.address, percentage: "50" },
             ]);
 
             // create first flow
-            let results = await createOrUpdateFlow(
+            let results = await modifyFlow(
                 sf.cfa.createFlow,
-                admin.SuperValve,
-                admin.address,
+                Admin.SuperValve,
+                Admin.address,
                 superValveAddress,
-                150,
                 userData,
+                150,
             );
-            checkUserFlowRateResults(150, results, userData);
+            checkUserFlowRateResults(150, results, userData, Admin.address);
 
             // increase flow rate
-            results = await createOrUpdateFlow(
+            results = await modifyFlow(
                 sf.cfa.updateFlow,
-                admin.SuperValve,
-                admin.address,
+                Admin.SuperValve,
+                Admin.address,
                 superValveAddress,
-                250,
                 userData,
+                250,
             );
-            checkUserFlowRateResults(250, results, userData);
+            checkUserFlowRateResults(250, results, userData, Admin.address);
 
             // decrease flow rate
-            results = await createOrUpdateFlow(
+            results = await modifyFlow(
                 sf.cfa.updateFlow,
-                admin.SuperValve,
-                admin.address,
+                Admin.SuperValve,
+                Admin.address,
                 superValveAddress,
-                50,
                 userData,
+                50,
             );
-            checkUserFlowRateResults(50, results, userData);
+            checkUserFlowRateResults(50, results, userData, Admin.address);
 
             // increase flow rate
-            results = await createOrUpdateFlow(
+            results = await modifyFlow(
                 sf.cfa.updateFlow,
-                admin.SuperValve,
-                admin.address,
+                Admin.SuperValve,
+                Admin.address,
                 superValveAddress,
-                550,
                 userData,
+                550,
             );
-            checkUserFlowRateResults(550, results, userData);
+            checkUserFlowRateResults(550, results, userData, Admin.address);
         });
 
         it("Should be able to change their allocations with flow rate staying constant.", async () => {
-            let userData = getCreateUpdateFlowUserData([
-                { pipeAddress: admin.VaultPipe.address, percentage: "50" },
-                { pipeAddress: admin.VaultPipe2.address, percentage: "50" },
+            let userData = getModifyFlowUserData([
+                { pipeAddress: Admin.VaultPipe.address, percentage: "50" },
+                { pipeAddress: Admin.VaultPipe2.address, percentage: "50" },
             ]);
 
             // create first flow
-            let results = await createOrUpdateFlow(
+            let results = await modifyFlow(
                 sf.cfa.createFlow,
-                admin.SuperValve,
-                admin.address,
+                Admin.SuperValve,
+                Admin.address,
                 superValveAddress,
-                150,
                 userData,
+                150,
             );
-            checkUserFlowRateResults(150, results, userData);
+            checkUserFlowRateResults(150, results, userData, Admin.address);
 
-            userData = getCreateUpdateFlowUserData([
-                { pipeAddress: admin.VaultPipe.address, percentage: "30" },
-                { pipeAddress: admin.VaultPipe2.address, percentage: "70" },
+            userData = getModifyFlowUserData([
+                { pipeAddress: Admin.VaultPipe.address, percentage: "30" },
+                { pipeAddress: Admin.VaultPipe2.address, percentage: "70" },
             ]);
 
-            results = await createOrUpdateFlow(
+            results = await modifyFlow(
                 sf.cfa.updateFlow,
-                admin.SuperValve,
-                admin.address,
+                Admin.SuperValve,
+                Admin.address,
                 superValveAddress,
-                150,
                 userData,
+                150,
             );
-            checkUserFlowRateResults(150, results, userData);
+            checkUserFlowRateResults(150, results, userData, Admin.address);
         });
 
         it("Should be able to remove allocation completely to one pipe.", async () => {
-            let userData = getCreateUpdateFlowUserData([
-                { pipeAddress: admin.VaultPipe.address, percentage: "50" },
-                { pipeAddress: admin.VaultPipe2.address, percentage: "50" },
+            let userData = getModifyFlowUserData([
+                { pipeAddress: Admin.VaultPipe.address, percentage: "50" },
+                { pipeAddress: Admin.VaultPipe2.address, percentage: "50" },
             ]);
 
             // create first flow
-            let results = await createOrUpdateFlow(
+            let results = await modifyFlow(
                 sf.cfa.createFlow,
-                admin.SuperValve,
-                admin.address,
+                Admin.SuperValve,
+                Admin.address,
                 superValveAddress,
-                150,
                 userData,
+                150,
             );
-            checkUserFlowRateResults(150, results, userData);
+            checkUserFlowRateResults(150, results, userData, Admin.address);
 
             // remove allocation completely from one pipe
-            userData = getCreateUpdateFlowUserData([
-                { pipeAddress: admin.VaultPipe.address, percentage: "0" },
-                { pipeAddress: admin.VaultPipe2.address, percentage: "100" },
+            userData = getModifyFlowUserData([
+                { pipeAddress: Admin.VaultPipe.address, percentage: "0" },
+                { pipeAddress: Admin.VaultPipe2.address, percentage: "100" },
             ]);
 
-            results = await createOrUpdateFlow(
+            results = await modifyFlow(
                 sf.cfa.updateFlow,
-                admin.SuperValve,
-                admin.address,
+                Admin.SuperValve,
+                Admin.address,
                 superValveAddress,
-                150,
                 userData,
+                150,
             );
-            checkUserFlowRateResults(150, results, userData);
+            checkUserFlowRateResults(150, results, userData, Admin.address);
         });
 
         it("Should be able to change their allocations and their flow rate.", async () => {
-            let userData = getCreateUpdateFlowUserData([
-                { pipeAddress: admin.VaultPipe.address, percentage: "50" },
-                { pipeAddress: admin.VaultPipe2.address, percentage: "50" },
+            let userData = getModifyFlowUserData([
+                { pipeAddress: Admin.VaultPipe.address, percentage: "50" },
+                { pipeAddress: Admin.VaultPipe2.address, percentage: "50" },
             ]);
 
             // create first flow
-            let results = await createOrUpdateFlow(
+            let results = await modifyFlow(
                 sf.cfa.createFlow,
-                admin.SuperValve,
-                admin.address,
+                Admin.SuperValve,
+                Admin.address,
                 superValveAddress,
-                150,
                 userData,
+                150,
             );
-            checkUserFlowRateResults(150, results, userData);
+            checkUserFlowRateResults(150, results, userData, Admin.address);
 
             // remove allocation completely from one pipe
-            userData = getCreateUpdateFlowUserData([
-                { pipeAddress: admin.VaultPipe.address, percentage: "43" },
-                { pipeAddress: admin.VaultPipe2.address, percentage: "57" },
+            userData = getModifyFlowUserData([
+                { pipeAddress: Admin.VaultPipe.address, percentage: "43" },
+                { pipeAddress: Admin.VaultPipe2.address, percentage: "57" },
             ]);
 
-            results = await createOrUpdateFlow(
+            results = await modifyFlow(
                 sf.cfa.updateFlow,
-                admin.SuperValve,
-                admin.address,
+                Admin.SuperValve,
+                Admin.address,
                 superValveAddress,
-                342,
                 userData,
+                342,
             );
-            checkUserFlowRateResults(342, results, userData);
+            checkUserFlowRateResults(342, results, userData, Admin.address);
         });
     });
 
     describe("Delete Flow Tests", () => {
+        it("Should be able to delete flow", async () => {
+            const deleteFlowData = getModifyFlowUserData([
+                { pipeAddress: Admin.VaultPipe.address, percentage: "0" },
+                { pipeAddress: Admin.VaultPipe2.address, percentage: "0" },
+            ]);
+            let userData = getModifyFlowUserData([
+                { pipeAddress: Admin.VaultPipe.address, percentage: "50" },
+                { pipeAddress: Admin.VaultPipe2.address, percentage: "50" },
+            ]);
 
+            // create first flow
+            let results = await modifyFlow(
+                sf.cfa.createFlow,
+                Admin.SuperValve,
+                Admin.address,
+                superValveAddress,
+                userData,
+                150,
+            );
+            checkUserFlowRateResults(150, results, userData, Admin.address);
+
+            // delete flow
+            results = await modifyFlow(
+                sf.cfa.deleteFlow,
+                Admin.SuperValve,
+                Admin.address,
+                superValveAddress,
+                deleteFlowData,
+            );
+            checkUserFlowRateResults(0, results, userData, Admin.address);
+
+            // create another flow
+            results = await modifyFlow(
+                sf.cfa.createFlow,
+                Admin.SuperValve,
+                Admin.address,
+                superValveAddress,
+                userData,
+                250,
+            );
+            checkUserFlowRateResults(250, results, userData, Admin.address);
+        });
     });
 
     /**************************************************************************
