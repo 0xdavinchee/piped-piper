@@ -115,7 +115,7 @@ describe("SuperValve Tests", () => {
             sf.host.address,
             sf.agreements.cfa.address,
             sf.tokens.fDAIx.address,
-            [vaultPipe.address],
+            [vaultPipe.address, vaultPipe2.address],
         );
         await superValve.deployed();
 
@@ -205,6 +205,38 @@ describe("SuperValve Tests", () => {
 
         return results;
     };
+
+    describe("Admin Permissions Tests", () => {
+        it("Should allow admin to add/remove pipe addresses", async () => {
+            const { SuperValve, users } = await setup();
+            await expect(SuperValve.addPipeAddress(users[3].address))
+                .to.emit(SuperValve, "NewPipeAddress")
+                .withArgs(users[3].address);
+            await expect(SuperValve.removePipeAddress(users[3].address))
+                .to.emit(SuperValve, "RemovedPipeAddress")
+                .withArgs(users[3].address);
+        });
+
+        it("Should not allow adding/removing invalid pipe addresses.", async () => {
+            const { SuperValve, users, VaultPipe2 } = await setup();
+            await expect(SuperValve.addPipeAddress(VaultPipe2.address)).to.revertedWith(
+                "SuperValve: This pipe address is already a valid pipe address.",
+            );
+            await expect(SuperValve.removePipeAddress(users[3].address)).to.revertedWith(
+                "SuperValve: This pipe address is not a valid pipe address.",
+            );
+        });
+
+        it("Should not allow non admin to add/remove pipe addresses", async () => {
+            const { users, VaultPipe } = await setup();
+            await expect(users[0].SuperValve.addPipeAddress(users[3].address)).to.revertedWith(
+                "SuperValve: You don't have permissions for this action.",
+            );
+            await expect(users[0].SuperValve.removePipeAddress(VaultPipe.address)).to.revertedWith(
+                "SuperValve: You don't have permissions for this action.",
+            );
+        });
+    });
 
     describe("Create Flow Tests", () => {
         it("Should be able to create flow to just a single pipe.", async () => {

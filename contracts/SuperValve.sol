@@ -59,6 +59,8 @@ contract SuperValve is SuperAppBase, AccessControl {
     uint256 public valveFlowRateLastUpdated;
 
     event NewPipeInflow(address _pipe, int96 _flowRate);
+    event NewPipeAddress(address _pipe);
+    event RemovedPipeAddress(address _pipe);
     event PipeInflowDeleted(address _pipe);
     event UpdateFlowInfo(
         address _pipe,
@@ -190,11 +192,14 @@ contract SuperValve is SuperAppBase, AccessControl {
     /** @dev Allow the admin role (the deployer of the contract), to add valid pipe addresses. */
     function addPipeAddress(address _address) external {
         require(hasRole(ADMIN, msg.sender), "SuperValve: You don't have permissions for this action.");
+        require(!isValidPipeAddress(_address), "SuperValve: This pipe address is already a valid pipe address.");
         validPipeAddresses.push(_address);
+        emit NewPipeAddress(_address);
     }
 
     /** @dev Allow the admin role (the deployer of the contract), to add valid pipe addresses. */
     function removePipeAddress(address _address) external {
+        require(isValidPipeAddress(_address), "SuperValve: This pipe address is not a valid pipe address.");
         require(hasRole(ADMIN, msg.sender), "SuperValve: You don't have permissions for this action.");
         uint256 index;
 
@@ -205,6 +210,7 @@ contract SuperValve is SuperAppBase, AccessControl {
         }
         validPipeAddresses[index] = validPipeAddresses[validPipeAddresses.length - 1];
         validPipeAddresses.pop();
+        emit RemovedPipeAddress(_address);
     }
 
     /**************************************************************************
@@ -318,6 +324,8 @@ contract SuperValve is SuperAppBase, AccessControl {
                 newPercentage >= 0 && newPercentage <= ONE_HUNDRED_PERCENT,
                 "SuperValve: Your percentage is outside of the acceptable range."
             );
+
+            require(isValidPipeAddress(receiverData.pipeRecipient), "SuperValve: The pipe address you have entered is not valid.");
 
             // get previous valveToPipe flow rate
             (, int96 previousValveToPipeFlowRate, , ) =
