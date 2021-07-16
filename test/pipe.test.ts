@@ -470,7 +470,7 @@ describe("SuperValve Tests", () => {
         });
     });
 
-    describe("Delete Flow Tests", () => {
+    describe.only("Delete Flow Tests", () => {
         it("Should be able to delete flow", async () => {
             const deleteFlowData = getModifyFlowUserData([
                 { pipeAddress: Admin.VaultPipe.address, percentage: "0" },
@@ -500,7 +500,7 @@ describe("SuperValve Tests", () => {
                 superValveAddress,
                 deleteFlowData,
             );
-            checkUserFlowRateResults(0, results, userData, Admin.address);
+            checkUserFlowRateResults(0, results, deleteFlowData, Admin.address);
 
             // create another flow
             results = await modifyFlow(

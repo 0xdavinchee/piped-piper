@@ -321,7 +321,7 @@ contract SuperValve is SuperAppBase, AccessControl {
         for (uint256 i = 0; i < allocations.receivers.length; i++) {
             totalPercentage += allocations.receivers[i].percentageAllocation;
         }
-        require(totalPercentage == 100, "SuperValve: Your allocations must add up to 100%.");
+        require(totalPercentage == 100 || totalPercentage == 0, "SuperValve: Your allocations must add up to 100% or be 0%.");
         }
         for (uint256 i = 0; i < allocations.receivers.length; i++) {
             ReceiverData memory receiverData = allocations.receivers[i];
