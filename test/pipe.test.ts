@@ -8,6 +8,11 @@ import SuperfluidSDK from "@superfluid-finance/js-sdk";
 import { setupUser, setupUsers } from "./utils";
 import { BigNumber } from "ethers";
 
+interface IFlowData {
+    readonly flowRate: string;
+    readonly receiver: string;
+    readonly sender: string;
+}
 interface IUserPipeData {
     pipeAddress: string;
     percentage: string;
@@ -128,7 +133,7 @@ describe("SuperValve Tests", () => {
         if (err) console.error("Deploy " + type + " Error: ", err);
     };
 
-    const monthlyRateToSeconds = (monthlyRate: number) => {
+    const monthlyToSecondRate = (monthlyRate: number) => {
         const days = 30;
         const hours = days * 24;
         const minutes = hours * 60;
@@ -151,14 +156,7 @@ describe("SuperValve Tests", () => {
         return encoder.decode(["address[]", "int96[]"], encodedData);
     };
 
-    const printOutUserToPipeFlowRates = async (
-        superValve: SuperValve,
-        userAddress: string,
-        pipeAddresses: string[],
-    ) => {
-    };
-
-    const checkUserFlowRateResults = async (
+    const checkUserFlowRateResults = (
         monthlyFlowRate: number,
         results: BigNumber[],
         userData: string,
@@ -175,12 +173,12 @@ describe("SuperValve Tests", () => {
                 names[userAddress] + " to " + names[pipeAddresses[i]] + " flow rate:",
                 toNum(results[i]),
                 "to be less than or equal to",
-                monthlyRateToSeconds(flowRateAllocation),
+                monthlyToSecondRate(flowRateAllocation),
             );
 
             // Note: flow rate will always be less than or equal to our desired flow rate as we set the
             // flow rate based on `getMaximumFlowRateFromDeposit`
-            expect(toNum(results[i])).to.be.lessThanOrEqual(monthlyRateToSeconds(flowRateAllocation));
+            expect(toNum(results[i])).to.be.lessThanOrEqual(monthlyToSecondRate(flowRateAllocation));
         }
         console.log("******************************************************\n");
     };
@@ -198,15 +196,12 @@ describe("SuperValve Tests", () => {
         data: string,
         monthlyFlowRate?: number,
     ) => {
-        const formattedFlowRate = monthlyFlowRate
-            ? ethers.utils.formatUnits(monthlyRateToSeconds(monthlyFlowRate))
-            : "";
+        const formattedFlowRate = monthlyFlowRate ? ethers.utils.formatUnits(monthlyToSecondRate(monthlyFlowRate)) : "";
         const type = monthlyFlowRate == null ? "Delete" : func === sf.cfa.createFlow ? "Create" : "Update";
         console.log(`\n****************** ${type} Flow Test ******************`);
         const message =
-            `${type} flow from ${names[sender]} to ${names[receiver]}` + monthlyFlowRate
-                ? ` at a flowRate of ${formattedFlowRate} fDAIx/s.`
-                : ".";
+            `${type} flow from ${names[sender]} to ${names[receiver]}` +
+            (monthlyFlowRate ? ` at a flowRate of ${formattedFlowRate} fDAIx/s.` : ".");
         console.log(message);
         try {
             if (monthlyFlowRate) {
@@ -214,7 +209,7 @@ describe("SuperValve Tests", () => {
                     superToken: sf.tokens.fDAIx.address,
                     sender,
                     receiver,
-                    flowRate: monthlyRateToSeconds(monthlyFlowRate),
+                    flowRate: monthlyToSecondRate(monthlyFlowRate),
                     userData: data,
                 });
             } else {
@@ -273,15 +268,18 @@ describe("SuperValve Tests", () => {
                 { pipeAddress: Admin.VaultPipe2.address, percentage: "0" },
             ]);
 
-            const results = await modifyFlow(
-                sf.cfa.createFlow,
-                Admin.SuperValve,
-                Admin.address,
-                superValveAddress,
-                userData,
-                150,
-            );
-            checkUserFlowRateResults(150, results, userData, Admin.address);
+            const usersData = userAddresses.map(x => ({ user: x, monthlyFlowRate: 150 }));
+            for (let i = 0; i < usersData.length; i++) {
+                const results = await modifyFlow(
+                    sf.cfa.createFlow,
+                    Admin.SuperValve,
+                    usersData[i].user,
+                    superValveAddress,
+                    userData,
+                    usersData[i].monthlyFlowRate,
+                );
+                checkUserFlowRateResults(usersData[i].monthlyFlowRate, results, userData, usersData[i].user);
+            }
         });
 
         it("Should be able to create a flow into two pipes.", async () => {
@@ -290,15 +288,18 @@ describe("SuperValve Tests", () => {
                 { pipeAddress: Admin.VaultPipe2.address, percentage: "50" },
             ]);
 
-            const results = await modifyFlow(
-                sf.cfa.createFlow,
-                Admin.SuperValve,
-                Admin.address,
-                superValveAddress,
-                userData,
-                150,
-            );
-            checkUserFlowRateResults(150, results, userData, Admin.address);
+            const usersData = userAddresses.map(x => ({ user: x, monthlyFlowRate: 150 }));
+            for (let i = 0; i < usersData.length; i++) {
+                const results = await modifyFlow(
+                    sf.cfa.createFlow,
+                    Admin.SuperValve,
+                    usersData[i].user,
+                    superValveAddress,
+                    userData,
+                    usersData[i].monthlyFlowRate,
+                );
+                checkUserFlowRateResults(usersData[i].monthlyFlowRate, results, userData, usersData[i].user);
+            }
         });
     });
 
