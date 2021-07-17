@@ -2,7 +2,7 @@
 pragma solidity >=0.7.1;
 
 abstract contract Vault {
-    function _depositToVault(uint256 _amount, address _sender) public virtual {}
+    function _depositToVault(address _underlying, uint256 _amount, address _sender) public virtual {}
 
     function _vaultAddress() public virtual returns (address) {}
 

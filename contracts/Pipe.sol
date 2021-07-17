@@ -24,14 +24,13 @@ import { Vault } from "./Vault.sol";
 /// Caveat: Certain variables are set to public for testing purposes.
 contract Pipe is Vault {
     struct UserFlowData {
-        uint256 vaultWithdrawnAmount;
         uint256 flowUpdatedTimestamp;
         int256 flowAmountSinceUpdate;
-        int256 totalFlowedToPipe;
+        int256 flowBalance;
     }
     struct InflowToPipeData {
         uint256 lastInflowToPipeFlowUpdate;
-        int256 totalInflowToPipeFlow;
+        int256 pipeFlowBalance;
         int96 inflowToPipeFlowRate;
     }
 
@@ -55,11 +54,11 @@ contract Pipe is Vault {
     event UserToPipeFlowDataUpdated(
         address user,
         int96 previousFlowRate,
-        int256 totalFlowedToPipe,
+        int256 flowBalance,
         uint256 flowUpdatedTimestamp,
         int256 flowAmountSinceUpdate
     );
-    event ValveToPipeFlowDataUpdated(int96 newFlowRate, int256 totalInflowToPipeFlow, uint256 lastInflowToPipeFlow);
+    event ValveToPipeFlowDataUpdated(int96 newFlowRate, int256 pipeFlowBalance, uint256 lastInflowToPipeFlow);
 
     constructor(ISuperToken _acceptedToken) Vault() {
         require(address(_acceptedToken) != address(0), "Token is zero address.");
@@ -102,20 +101,20 @@ contract Pipe is Vault {
      * last updated their flow agreement.
      */
     function setUserFlowWithdrawData(address _user, int96 _previousFlowRate) external {
-        int256 totalFlowedToPipe =
-            userFlowData[_user].totalFlowedToPipe.add(
+        int256 flowBalance =
+            userFlowData[_user].flowBalance.add(
                 block.timestamp.toInt256().sub(userFlowData[_user].flowUpdatedTimestamp.toInt256()).mul(
                     _previousFlowRate
                 )
             );
         userFlowData[_user].flowAmountSinceUpdate = _withdrawableFlowAmount(_user, _previousFlowRate);
-        userFlowData[_user].totalFlowedToPipe = totalFlowedToPipe;
+        userFlowData[_user].flowBalance = flowBalance;
         userFlowData[_user].flowUpdatedTimestamp = block.timestamp;
 
         emit UserToPipeFlowDataUpdated(
             _user,
             _previousFlowRate,
-            totalFlowedToPipe,
+            flowBalance,
             block.timestamp,
             _withdrawableFlowAmount(_user, _previousFlowRate)
         );
@@ -126,17 +125,17 @@ contract Pipe is Vault {
      * when the flow agreement was last updated.
      */
     function setPipeFlowData(int96 _newFlowRate) external {
-        int256 totalInflowToPipeFlow =
-            inflowToPipeData.totalInflowToPipeFlow.add(
+        int256 pipeFlowBalance =
+            inflowToPipeData.pipeFlowBalance.add(
                 block.timestamp.toInt256().sub(inflowToPipeData.lastInflowToPipeFlowUpdate.toInt256()).mul(
                     inflowToPipeData.inflowToPipeFlowRate
                 )
             );
-        inflowToPipeData.totalInflowToPipeFlow = totalInflowToPipeFlow;
+        inflowToPipeData.pipeFlowBalance = pipeFlowBalance;
         inflowToPipeData.inflowToPipeFlowRate = _newFlowRate;
         inflowToPipeData.lastInflowToPipeFlowUpdate = block.timestamp;
 
-        emit ValveToPipeFlowDataUpdated(_newFlowRate, totalInflowToPipeFlow, block.timestamp);
+        emit ValveToPipeFlowDataUpdated(_newFlowRate, pipeFlowBalance, block.timestamp);
     }
 
     /**************************************************************************
@@ -150,17 +149,19 @@ contract Pipe is Vault {
     function depositFundsIntoVault() public {
         require(msg.sender == allowedVaultDepositorAddress, "You don't have permission to deposit into the vault.");
         // this should get the current available balance/flowed in amount from users
-        (int256 pipeAvailableBalance, , , ) = ISuperToken(acceptedToken).realtimeBalanceOfNow(address(this));
+        (int256 pipeAvailableBalance, , , ) = acceptedToken.realtimeBalanceOfNow(address(this));
         emit DepositableFunds(pipeAvailableBalance);
         require(pipeAvailableBalance > 0, "There is nothing to deposit into the vault");
 
         lastVaultDepositTimestamp = block.timestamp;
 
         uint256 amount = pipeAvailableBalance.toUint256();
-        ISuperToken(acceptedToken).downgrade(amount);
+        acceptedToken.downgrade(amount);
+
+        address underlying = acceptedToken.getUnderlyingToken();
 
         // deposit into the vault
-        _depositToVault(amount, address(this));
+        _depositToVault(underlying, amount, address(this));
 
         emit DepositFundsToVault(amount, block.timestamp);
     }
@@ -184,13 +185,12 @@ contract Pipe is Vault {
         uint256 withdrawableFlowAmount = availableFlowWithdraw.toUint256();
         require(withdrawableFlowAmount > 0 || availableVaultWithdrawAmount > 0, "There is nothing to withdraw.");
 
-        // update the user's vault withdrawn amounts
-        userFlowData[_user].vaultWithdrawnAmount = userFlowData[_user].vaultWithdrawnAmount.add(
-            availableVaultWithdrawAmount
-        );
+        // subtract whatever the user is withdrawing from the valve balance
+        inflowToPipeData.pipeFlowBalance.sub(availableFlowWithdraw.add(availableVaultWithdrawAmount.toInt256()));
 
-        // since the user is withdrawing, we reset the flowAmount and the flow available for withdrawal
+        // since the user is withdrawing, we reset the flowAmount since update as well as the user's flowBalance
         userFlowData[_user].flowAmountSinceUpdate = 0;
+        userFlowData[_user].flowBalance = 0;
         userFlowData[_user].flowUpdatedTimestamp = block.timestamp;
 
         if (availableVaultWithdrawAmount > 0) {
@@ -223,7 +223,8 @@ contract Pipe is Vault {
     function totalWithdrawableBalance(address _withdrawer, int96 _flowRate) external view returns (int256) {
         uint256 totalVaultBalance = _vaultBalanceOf(address(this));
         int256 availableFlowWithdraw = _withdrawableFlowAmount(_withdrawer, _flowRate);
-        return availableFlowWithdraw.add(_vaultRewardBalanceOf(_withdrawer, totalVaultBalance).toInt256());
+        int256 vaultReward = _vaultRewardBalanceOf(_withdrawer, totalVaultBalance).toInt256();
+        return availableFlowWithdraw.add(vaultReward);
     }
 
     /**
@@ -231,18 +232,12 @@ contract Pipe is Vault {
      * calculated based on their share of the Pipe deposits.
      */
     function _vaultRewardBalanceOf(address _withdrawer, uint256 _vaultBalance) internal view returns (uint256) {
-        uint256 totalVaultWithdrawableAmount =
-            inflowToPipeData.totalInflowToPipeFlow == 0
-                ? 0
-                : userFlowData[_withdrawer]
-                    .totalFlowedToPipe
-                    .div(inflowToPipeData.totalInflowToPipeFlow)
+        uint256 totalVaultWithdrawableAmount = userFlowData[_withdrawer]
+                    .flowBalance
+                    .mul(10 ** 18)
+                    .div(inflowToPipeData.pipeFlowBalance)
                     .toUint256()
                     .mul(_vaultBalance);
-
-        return
-            totalVaultWithdrawableAmount > userFlowData[_withdrawer].vaultWithdrawnAmount
-                ? totalVaultWithdrawableAmount.sub(userFlowData[_withdrawer].vaultWithdrawnAmount)
-                : 0;
+        return totalVaultWithdrawableAmount.div(10 ** 18);
     }
 }

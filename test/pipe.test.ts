@@ -679,6 +679,46 @@ describe("SuperValve Tests", () => {
             }
         });
 
+        it("Should be able to deposit into vaults and withdraw from them.", async () => {
+            const PIPE_ADDRESSES = [Admin.VaultPipe.address, Admin.VaultPipe2.address];
+            let flowAfterThirtyDays = [];
+            const deleteFlowData = getModifyFlowUserData([
+                { pipeAddress: Admin.VaultPipe.address, percentage: "0" },
+                { pipeAddress: Admin.VaultPipe2.address, percentage: "0" },
+            ]);
+
+            // create flow to superValve
+            await executeModifyFlowTestsForUsers(sf.cfa.createFlow, null);
+
+            // go 30 days into the future
+            await hre.network.provider.send("evm_increaseTime", [86400 * 30]);
+            await hre.network.provider.send("evm_mine");
+
+            // delete flows
+            await executeModifyFlowTestsForUsers(sf.cfa.deleteFlow, 0, deleteFlowData);
+
+            // get user total flowed
+            for (let i = 0; i < userAddresses.length; i++) {
+                const [userFlowBalance] = await Admin.SuperValve.getUserTotalFlowedBalance(userAddresses[i]);
+                flowAfterThirtyDays.push(userFlowBalance);
+            }
+
+            // deposit funds into the vaults
+            await Promise.all([Admin.VaultPipe.depositFundsIntoVault(), Admin.VaultPipe2.depositFundsIntoVault()]);
+
+            for (let i = 0; i < Users.length; i++) {
+                console.log(names[Users[i].address] + " withdrawing from SuperValve.");
+                await Users[i].SuperValve.withdraw(PIPE_ADDRESSES);
+            }
+
+            console.log("Expect all the user flow balances to be 0 after withdrawal.");
+            // get user total flowed after withdrawal
+            for (let i = 0; i < userAddresses.length; i++) {
+                const [userFlowBalance] = await Admin.SuperValve.getUserTotalFlowedBalance(userAddresses[i]);
+                expect(userFlowBalance).to.eq(0);
+            }
+        });
+
         it("Should not be able to withdraw from invalid pipe address.", async () => {
             const INVALID_PIPE_ADDRESSES = [Alice.address, Bob.address];
 
