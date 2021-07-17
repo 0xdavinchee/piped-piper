@@ -193,6 +193,11 @@ describe("SuperValve Tests", () => {
         console.log("******************************************************\n");
     };
 
+    const checkRevertResults = async (revertedFunc: any, revertMsg: string) => {
+        console.log("\nExpect to be reverted with:", revertMsg, "\n");
+        await expect(revertedFunc).to.be.revertedWith(revertMsg);
+    };
+
     /** Modifies flow from sender to receiver of monthly flow rate and
      * the receiver (super app) redirects these flows to multiple pipes.
      * This function returns an array containing information about the
@@ -244,6 +249,33 @@ describe("SuperValve Tests", () => {
         return results;
     };
 
+    const expectRevertedModifyFlow = async (
+        func: any,
+        sender: string,
+        receiver: string,
+        data: string,
+        monthlyFlowRate?: number,
+    ) => {
+        const type = monthlyFlowRate == null ? "Delete" : func === sf.cfa.createFlow ? "Create" : "Update";
+        console.log(`\n****************** Expect ${type} Flow Reverted ******************`);
+        const funcData =
+            monthlyFlowRate == null
+                ? {
+                      superToken: sf.tokens.fDAIx.address,
+                      sender,
+                      receiver,
+                      userData: data,
+                  }
+                : {
+                      superToken: sf.tokens.fDAIx.address,
+                      sender,
+                      receiver,
+                      flowRate: ethers.BigNumber.from(monthlyToSecondRate(monthlyFlowRate)),
+                      userData: data,
+                  };
+        return func(funcData);
+    };
+
     describe.skip("Admin Permissions Tests", () => {
         it("Should allow admin to add/remove pipe addresses", async () => {
             await expect(Admin.SuperValve.addPipeAddress(Alice.address))
@@ -273,7 +305,7 @@ describe("SuperValve Tests", () => {
         });
     });
 
-    describe("Create Flow Tests", () => {
+    describe.only("Create Flow Tests", () => {
         it("Should be able to create flow to just a single pipe.", async () => {
             const userData = getModifyFlowUserData([
                 { pipeAddress: Admin.VaultPipe.address, percentage: "100" },
@@ -312,6 +344,95 @@ describe("SuperValve Tests", () => {
                 );
                 checkUserFlowRateResults(randomFlowRate, results, userData, userAddresses[i]);
             }
+        });
+
+        it("Should revert when users try to create a flow with flowrate of 0.", async () => {
+            const userData = getModifyFlowUserData([
+                { pipeAddress: Admin.VaultPipe.address, percentage: "50" },
+                { pipeAddress: Admin.VaultPipe2.address, percentage: "50" },
+            ]);
+
+            const revertedModifyFlowPromise = expectRevertedModifyFlow(
+                sf.cfa.createFlow,
+                userAddresses[0],
+                superValveAddress,
+                userData,
+                0,
+            );
+            await checkRevertResults(revertedModifyFlowPromise, "CFA: invalid flow rate");
+        });
+
+        it("Should revert when users try to create a flow with allocations that don't add up to 100.", async () => {
+            // when allocations > 100%
+            let userData = getModifyFlowUserData([
+                { pipeAddress: Admin.VaultPipe.address, percentage: "60" },
+                { pipeAddress: Admin.VaultPipe2.address, percentage: "50" },
+            ]);
+
+            let revertedModifyFlowPromise = expectRevertedModifyFlow(
+                sf.cfa.createFlow,
+                userAddresses[0],
+                superValveAddress,
+                userData,
+                150,
+            );
+            await checkRevertResults(
+                revertedModifyFlowPromise,
+                "SuperValve: Your allocations must add up to 100% or be 0%.",
+            );
+
+            // when allocations < 100%
+            userData = getModifyFlowUserData([
+                { pipeAddress: Admin.VaultPipe.address, percentage: "20" },
+                { pipeAddress: Admin.VaultPipe2.address, percentage: "50" },
+            ]);
+            revertedModifyFlowPromise = expectRevertedModifyFlow(
+                sf.cfa.createFlow,
+                userAddresses[0],
+                superValveAddress,
+                userData,
+                150,
+            );
+            await checkRevertResults(
+                revertedModifyFlowPromise,
+                "SuperValve: Your allocations must add up to 100% or be 0%.",
+            );
+
+            // when attempting with one allocation > 100%
+            userData = getModifyFlowUserData([
+                { pipeAddress: Admin.VaultPipe.address, percentage: "120" },
+                { pipeAddress: Admin.VaultPipe2.address, percentage: "0" },
+            ]);
+            revertedModifyFlowPromise = expectRevertedModifyFlow(
+                sf.cfa.createFlow,
+                userAddresses[0],
+                superValveAddress,
+                userData,
+                150,
+            );
+            await checkRevertResults(
+                revertedModifyFlowPromise,
+                "SuperValve: Your percentage is outside of the acceptable range.",
+            );
+        });
+
+        it("Should revert when users try to create a flow to an invalid address.", async () => {
+            let userData = getModifyFlowUserData([
+                { pipeAddress: Alice.address, percentage: "50" },
+                { pipeAddress: Admin.VaultPipe2.address, percentage: "50" },
+            ]);
+
+            let revertedModifyFlowPromise = expectRevertedModifyFlow(
+                sf.cfa.createFlow,
+                userAddresses[0],
+                superValveAddress,
+                userData,
+                150,
+            );
+            await checkRevertResults(
+                revertedModifyFlowPromise,
+                "SuperValve: The pipe address you have entered is not valid.",
+            );
         });
     });
 

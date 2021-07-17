@@ -319,6 +319,10 @@ contract SuperValve is SuperAppBase, AccessControl {
         {        
         int96 totalPercentage;
         for (uint256 i = 0; i < allocations.receivers.length; i++) {
+            require(
+                allocations.receivers[i].percentageAllocation >= 0 && allocations.receivers[i].percentageAllocation <= ONE_HUNDRED_PERCENT,
+                "SuperValve: Your percentage is outside of the acceptable range."
+            );
             totalPercentage += allocations.receivers[i].percentageAllocation;
         }
         require(totalPercentage == 100 || totalPercentage == 0, "SuperValve: Your allocations must add up to 100% or be 0%.");
@@ -326,10 +330,6 @@ contract SuperValve is SuperAppBase, AccessControl {
         for (uint256 i = 0; i < allocations.receivers.length; i++) {
             ReceiverData memory receiverData = allocations.receivers[i];
             int96 newPercentage = receiverData.percentageAllocation;
-            require(
-                newPercentage >= 0 && newPercentage <= ONE_HUNDRED_PERCENT,
-                "SuperValve: Your percentage is outside of the acceptable range."
-            );
 
             require(isValidPipeAddress(receiverData.pipeRecipient), "SuperValve: The pipe address you have entered is not valid.");
 
