@@ -4,6 +4,7 @@ import "solidity-coverage";
 import "hardhat-deploy";
 import "hardhat-deploy-ethers";
 import "@nomiclabs/hardhat-web3";
+import "hardhat-prettier";
 
 import "./tasks/accounts";
 import "./tasks/clean";

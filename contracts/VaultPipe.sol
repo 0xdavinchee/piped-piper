@@ -24,7 +24,7 @@ contract VaultPipe is Pipe {
         vault.depositTokens(_amount, _sender);
     }
 
-    function _vaultAddress() public override view returns(address) {
+    function _vaultAddress() public view override returns (address) {
         return address(vault);
     }
 
