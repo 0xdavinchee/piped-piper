@@ -1,12 +1,12 @@
 import { expect } from "./chai-setup";
-import { FakeVault, SuperValve, VaultPipe } from "../typechain";
+import { BigNumber } from "ethers";
 import hre, { ethers, getNamedAccounts, getUnnamedAccounts } from "hardhat";
 import deployFramework from "@superfluid-finance/ethereum-contracts/scripts/deploy-framework";
 import deployTestToken from "@superfluid-finance/ethereum-contracts/scripts/deploy-test-token";
 import deploySuperToken from "@superfluid-finance/ethereum-contracts/scripts/deploy-super-token";
 import SuperfluidSDK from "@superfluid-finance/js-sdk";
+import { FakeVault, SuperValve, VaultPipe } from "../typechain";
 import { setupUser } from "./utils";
-import { BigNumber } from "ethers";
 
 interface IUserPipeData {
     pipeAddress: string;
@@ -92,12 +92,10 @@ describe("SuperValve Tests", () => {
         const vaultPipe = await vaultPipeFactory.deploy(daix.address, fakeVault.address);
         const fakeVault2 = await fakeVaultFactory.deploy(sf.tokens.fDAI.address, "fDAI Vault 2 Token", "fDAI");
         const vaultPipe2 = await vaultPipeFactory.deploy(daix.address, fakeVault2.address);
-        const superValve = await superValveFactory.deploy(
-            sf.host.address,
-            sf.agreements.cfa.address,
-            daix.address,
-            [vaultPipe.address, vaultPipe2.address],
-        );
+        const superValve = await superValveFactory.deploy(sf.host.address, sf.agreements.cfa.address, daix.address, [
+            vaultPipe.address,
+            vaultPipe2.address,
+        ]);
 
         await fakeVault.deployed();
         await vaultPipe.deployed();
@@ -254,7 +252,16 @@ describe("SuperValve Tests", () => {
         return [userToPipeFlowRates, userToPipeAllocations];
     };
 
-    const expectRevertedModifyFlow = async (
+    /**
+     * Function for testing cases where we expect it to revert, returns the promise that will be reverted.
+     * @param func
+     * @param sender
+     * @param receiver
+     * @param data
+     * @param monthlyFlowRate
+     * @returns
+     */
+    const getRevertedModifyFlowPromise = async (
         func: any,
         sender: string,
         receiver: string,
@@ -318,7 +325,7 @@ describe("SuperValve Tests", () => {
      * @param userData if this is null, we randomize this
      * @param incrementer if this is null, it is 0
      */
-    const executeModifyFlowTestsForUsers = async (
+    const executeModifyFlowTestForUsers = async (
         func: any,
         flowRate: number | null,
         userData?: string,
@@ -336,8 +343,13 @@ describe("SuperValve Tests", () => {
         revertString: string,
         flowRate?: number,
     ) => {
-        let revertedModifyFlowPromise = expectRevertedModifyFlow(func, sender, superValveAddress, userData, flowRate);
-
+        let revertedModifyFlowPromise = getRevertedModifyFlowPromise(
+            func,
+            sender,
+            superValveAddress,
+            userData,
+            flowRate,
+        );
         await checkRevertResults(revertedModifyFlowPromise, revertString);
     };
 
@@ -359,6 +371,8 @@ describe("SuperValve Tests", () => {
             const [userFlowBalance] = await Admin.SuperValve.getUserTotalFlowedBalance(userAddresses[i]);
             preWithdrawalFlowBalance.push(userFlowBalance);
         }
+
+        // withdraw for each user
         for (let i = 0; i < Users.length; i++) {
             const txn = await Users[i].SuperValve.withdraw(PIPE_ADDRESSES);
             const res = await txn.wait();
@@ -453,7 +467,7 @@ describe("SuperValve Tests", () => {
                 { pipeAddress: Admin.VaultPipe2.address, percentage: "0" },
             ]);
 
-            await executeModifyFlowTestsForUsers(sf.cfa.createFlow, null, userData);
+            await executeModifyFlowTestForUsers(sf.cfa.createFlow, null, userData);
         });
 
         it("Should be able to create a flow into two pipes.", async () => {
@@ -462,7 +476,7 @@ describe("SuperValve Tests", () => {
                 { pipeAddress: Admin.VaultPipe2.address, percentage: "50" },
             ]);
 
-            await executeModifyFlowTestsForUsers(sf.cfa.createFlow, null, userData);
+            await executeModifyFlowTestForUsers(sf.cfa.createFlow, null, userData);
         });
 
         it("Should revert when users try to create a flow with flowrate of 0.", async () => {
@@ -486,7 +500,6 @@ describe("SuperValve Tests", () => {
                 { pipeAddress: Admin.VaultPipe.address, percentage: "60" },
                 { pipeAddress: Admin.VaultPipe2.address, percentage: "50" },
             ]);
-
             await executeExpectRevertModifyFlowTest(
                 sf.cfa.createFlow,
                 userAddresses[0],
@@ -507,12 +520,12 @@ describe("SuperValve Tests", () => {
                 "SuperValve: Your allocations must add up to 100% when creating or updating or be 0%.",
                 150,
             );
+
             // when attempting with one allocation > 100%
             userData = getModifyFlowUserData([
                 { pipeAddress: Admin.VaultPipe.address, percentage: "120" },
                 { pipeAddress: Admin.VaultPipe2.address, percentage: "0" },
             ]);
-
             await executeExpectRevertModifyFlowTest(
                 sf.cfa.createFlow,
                 userAddresses[0],
@@ -546,49 +559,64 @@ describe("SuperValve Tests", () => {
             ]);
 
             // create flow to superValve
-            await executeModifyFlowTestsForUsers(sf.cfa.createFlow, null, userData);
+            await executeModifyFlowTestForUsers(sf.cfa.createFlow, null, userData);
 
             // increase flow rate (increments num between 0-1000 by 1000)
-            await executeModifyFlowTestsForUsers(sf.cfa.updateFlow, null, userData, 1000);
+            await executeModifyFlowTestForUsers(sf.cfa.updateFlow, null, userData, 1000);
 
             // decrease flow rate
-            await executeModifyFlowTestsForUsers(sf.cfa.updateFlow, null, userData);
+            await executeModifyFlowTestForUsers(sf.cfa.updateFlow, null, userData);
         });
 
         it("Should be able to change their allocations with flow rate staying constant.", async () => {
             // create flow to superValve
-            await executeModifyFlowTestsForUsers(sf.cfa.createFlow, 150);
+            await executeModifyFlowTestForUsers(sf.cfa.createFlow, 150);
 
             // update allocation whilst keeping flowRate the same
-            await executeModifyFlowTestsForUsers(sf.cfa.updateFlow, 150);
+            await executeModifyFlowTestForUsers(sf.cfa.updateFlow, 150);
         });
 
         it("Should be able to remove allocation completely to one pipe.", async () => {
             // create initial flow rate
-            await executeModifyFlowTestsForUsers(sf.cfa.createFlow, 150);
+            await executeModifyFlowTestForUsers(sf.cfa.createFlow, 150);
 
             // remove allocation completely from one pipe
             let userData = getModifyFlowUserData([
                 { pipeAddress: Admin.VaultPipe.address, percentage: "0" },
                 { pipeAddress: Admin.VaultPipe2.address, percentage: "100" },
             ]);
-            await executeModifyFlowTestsForUsers(sf.cfa.updateFlow, 150, userData);
+            await executeModifyFlowTestForUsers(sf.cfa.updateFlow, 150, userData);
         });
 
         it("Should be able to change their allocations and their flow rate.", async () => {
             // create flow to superValve
-            await executeModifyFlowTestsForUsers(sf.cfa.createFlow, null);
+            await executeModifyFlowTestForUsers(sf.cfa.createFlow, null);
 
             // update flowRate and allocations
-            await executeModifyFlowTestsForUsers(sf.cfa.updateFlow, null);
+            await executeModifyFlowTestForUsers(sf.cfa.updateFlow, null);
+        });
+
+        it("Should be able to update allocations and flow rate to same amounts.", async () => {
+            // remove allocation completely from one pipe
+            let userData = getModifyFlowUserData([
+                { pipeAddress: Admin.VaultPipe.address, percentage: "50" },
+                { pipeAddress: Admin.VaultPipe2.address, percentage: "50" },
+            ]);
+            // create flow to superValve
+            await executeModifyFlowTestForUsers(sf.cfa.createFlow, 150, userData);
+
+            // update flowRate and allocations
+            await executeModifyFlowTestForUsers(sf.cfa.updateFlow, 150, userData);
         });
 
         it("Should properly calculate total valve balance", async () => {
             // create flow to superValve
-            await executeModifyFlowTestsForUsers(sf.cfa.createFlow, null);
+            await executeModifyFlowTestForUsers(sf.cfa.createFlow, null);
+
             let totalValveBalanceByUserFlowBalance = 0;
             let totalValveFlowRate = 0;
             const pipeAddresses = [Admin.VaultPipe.address, Admin.VaultPipe2.address];
+
             for (let i = 0; i < userAddresses.length; i++) {
                 // sum the flowRates of all users for all pipeAddresses
                 for (let j = 0; j < pipeAddresses.length; j++) {
@@ -599,10 +627,12 @@ describe("SuperValve Tests", () => {
                     totalValveFlowRate += toNum(userPipeAllocation);
                 }
 
+                // sum totalValveBalance w/ userBalance
                 const [userBalance] = await Admin.SuperValve.getUserTotalFlowedBalance(userAddresses[i]);
                 totalValveBalanceByUserFlowBalance += toNum(userBalance);
             }
             const [totalValveBalance] = await Admin.SuperValve.getTotalValveBalance(totalValveFlowRate);
+
             expect(totalValveBalanceByUserFlowBalance).to.eq(toNum(totalValveBalance));
         });
 
@@ -669,17 +699,17 @@ describe("SuperValve Tests", () => {
     describe("Delete Flow Tests", () => {
         it("Should be able to delete flow", async () => {
             // create flow to superValve
-            await executeModifyFlowTestsForUsers(sf.cfa.createFlow, null);
+            await executeModifyFlowTestForUsers(sf.cfa.createFlow, null);
 
             const deleteFlowData = getModifyFlowUserData([
                 { pipeAddress: Admin.VaultPipe.address, percentage: "0" },
                 { pipeAddress: Admin.VaultPipe2.address, percentage: "0" },
             ]);
             // delete flow to superValve
-            await executeModifyFlowTestsForUsers(sf.cfa.deleteFlow, 0, deleteFlowData);
+            await executeModifyFlowTestForUsers(sf.cfa.deleteFlow, 0, deleteFlowData);
 
             // create flow to superValve
-            await executeModifyFlowTestsForUsers(sf.cfa.createFlow, null);
+            await executeModifyFlowTestForUsers(sf.cfa.createFlow, null);
         });
 
         it("Should not allow you to delete a flow if it doesn't exist.", async () => {
@@ -694,23 +724,6 @@ describe("SuperValve Tests", () => {
                 "CFA: flow does not exist",
             );
         });
-
-        it("Should properly catch error in beforeAgreementTerminated hook", async () => {
-            const deleteFlowData = getModifyFlowUserData([
-                { pipeAddress: Admin.VaultPipe.address, percentage: "0" },
-                { pipeAddress: Admin.VaultPipe2.address, percentage: "0" },
-            ]);
-            await executeModifyFlowTest(sf.cfa.createFlow, userAddresses[0], null);
-
-            const deleteFlowPromise = sf.cfa.deleteFlow({
-                superToken: dai.address,
-                sender: userAddresses[0],
-                receiver: Admin.SuperValve.address,
-                userData: deleteFlowData,
-            });
-
-            await expect(deleteFlowPromise).to.be.revertedWith("CallUtils: target reverted");
-        });
     });
 
     describe("Withdrawal/Deposit Tests", () => {
@@ -721,7 +734,7 @@ describe("SuperValve Tests", () => {
             ]);
 
             // create flow to superValve
-            await executeModifyFlowTestsForUsers(sf.cfa.createFlow, null);
+            await executeModifyFlowTestForUsers(sf.cfa.createFlow, null);
 
             // go 30 days into the future
             await hre.network.provider.send("evm_increaseTime", [86400 * 30]);
@@ -735,7 +748,7 @@ describe("SuperValve Tests", () => {
             await hre.network.provider.send("evm_mine");
 
             // delete flows
-            await executeModifyFlowTestsForUsers(sf.cfa.deleteFlow, 0, deleteFlowData);
+            await executeModifyFlowTestForUsers(sf.cfa.deleteFlow, 0, deleteFlowData);
 
             // withdraw funds from super valve and execute tests
             await executeWithdrawalTestForUsers(false);
@@ -748,7 +761,7 @@ describe("SuperValve Tests", () => {
             ]);
 
             // create flow to superValve
-            await executeModifyFlowTestsForUsers(sf.cfa.createFlow, null);
+            await executeModifyFlowTestForUsers(sf.cfa.createFlow, null);
 
             // go 30 days into the future
             await hre.network.provider.send("evm_increaseTime", [86400 * 30]);
@@ -761,7 +774,7 @@ describe("SuperValve Tests", () => {
             await executeWithdrawalTestForUsers(true);
 
             // delete flows
-            await executeModifyFlowTestsForUsers(sf.cfa.deleteFlow, 0, deleteFlowData);
+            await executeModifyFlowTestForUsers(sf.cfa.deleteFlow, 0, deleteFlowData);
 
             // withdraw funds from super valve and execute tests
             await executeWithdrawalTestForUsers(false);
@@ -774,7 +787,7 @@ describe("SuperValve Tests", () => {
             ]);
 
             // create flow to superValve
-            await executeModifyFlowTestsForUsers(sf.cfa.createFlow, null);
+            await executeModifyFlowTestForUsers(sf.cfa.createFlow, null);
 
             // go 30 days into the future
             await hre.network.provider.send("evm_increaseTime", [86400 * 30]);
@@ -790,7 +803,7 @@ describe("SuperValve Tests", () => {
             await executeWithdrawalTestForUsers(true);
 
             // update flow to superValve
-            await executeModifyFlowTestsForUsers(sf.cfa.updateFlow, null);
+            await executeModifyFlowTestForUsers(sf.cfa.updateFlow, null);
 
             // go 30 days into the future
             await hre.network.provider.send("evm_increaseTime", [86400 * 30]);
@@ -803,7 +816,7 @@ describe("SuperValve Tests", () => {
             await executeWithdrawalTestForUsers(true);
 
             // delete flows
-            await executeModifyFlowTestsForUsers(sf.cfa.deleteFlow, 0, deleteFlowData);
+            await executeModifyFlowTestForUsers(sf.cfa.deleteFlow, 0, deleteFlowData);
 
             // withdraw funds from super valve and execute tests
             await executeWithdrawalTestForUsers(false);

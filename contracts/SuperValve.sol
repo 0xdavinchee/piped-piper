@@ -72,17 +72,8 @@ contract SuperValve is SuperAppBase, AccessControl {
         int96 userToPipeFlowRateDifference
     );
     event FlowRateInfo(uint256 appAllowance, int96 safeFlowRate);
-    event RealFlowRate(int96 flowRate);
     event ValveBalanceUpdated(int256 valveBalance, uint256 timestamp);
-    event ValveBalanceModify(int96 flowRate, int256 valveBalanceOld, int256 valveBalanceNew, uint256 timestamp);
     event Withdrawal(uint256 withdrawalAmount);
-    event WithdrawalData(
-        int256 oldValveBalance,
-        int256 newValveBalance,
-        uint256 withdrawalAmount,
-        int256 totalAdditionalFlow
-    );
-    event Terminator();
 
     constructor(
         ISuperfluid _host,
@@ -128,7 +119,6 @@ contract SuperValve is SuperAppBase, AccessControl {
             totalWithdrawalAmount = totalWithdrawalAmount.add(pipeWithdrawAmount);
         }
         int256 newValveBalance = totalValveBalance.add(totalAdditionalFlows).sub(totalWithdrawalAmount.toInt256());
-        emit WithdrawalData(totalValveBalance, newValveBalance, totalWithdrawalAmount, totalAdditionalFlows);
         totalValveBalance = newValveBalance;
         valveFlowRateLastUpdated = block.timestamp;
 
@@ -304,7 +294,6 @@ contract SuperValve is SuperAppBase, AccessControl {
             : cfa.getDepositRequiredForFlowRate(acceptedToken, safeFlowRate);
 
         emit FlowRateInfo(data.context.appAllowanceGranted, safeFlowRate);
-        emit RealFlowRate(data.newUserToValveFlowRate);
         {
             int96 totalPercentage;
             for (uint256 i = 0; i < allocations.receivers.length; i++) {

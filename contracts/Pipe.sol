@@ -47,7 +47,6 @@ contract Pipe is Vault {
     uint256 public lastVaultDepositTimestamp; // private
     InflowToPipeData public inflowToPipeData; // private
 
-    event DepositableFunds(int256 amount);
     event DepositFundsToVault(uint256 amount, uint256 timestamp);
     event WithdrawFromVault(address withdrawer, uint256 amount);
     event WithdrawPipeFlow(address indexed withdrawer, uint256 amount);
@@ -154,7 +153,6 @@ contract Pipe is Vault {
         require(msg.sender == allowedVaultDepositorAddress, "You don't have permission to deposit into the vault.");
         // this should get the current available balance/flowed in amount from users
         (int256 pipeAvailableBalance, , , ) = acceptedToken.realtimeBalanceOfNow(address(this));
-        emit DepositableFunds(pipeAvailableBalance);
         require(pipeAvailableBalance > 0, "There is nothing to deposit into the vault");
 
         lastVaultDepositTimestamp = block.timestamp;
