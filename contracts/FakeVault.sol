@@ -21,11 +21,6 @@ contract FakeVault is ERC20 {
         acceptedToken = IERC20(_acceptedToken);
     }
 
-    modifier onlyOwner() {
-        require(msg.sender == owner, "FakeVault: You are not the owner.");
-        _;
-    }
-
     /** @dev User can use this function to deposits the acceptedToken, and receive
      * vault tokens in return.
      */

@@ -214,12 +214,6 @@ contract Pipe is Vault {
      * Getter Functions
      *************************************************************************/
 
-    /** @dev Returns the amount of flowed tokens that are withdrawable by the _depositor.
-     */
-    function withdrawableFlowBalance(address _user, int96 _flowRate) external view returns (int256) {
-        return _withdrawableFlowAmount(_user, _flowRate);
-    }
-
     /** @dev Returns the total withdrawable balance, composed of the tokens deposited in the vault + rewards
      * as well as the amount of tokens that haven't been deposited but have been flowed into the Pipe.
      */

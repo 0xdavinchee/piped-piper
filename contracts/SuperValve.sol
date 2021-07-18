@@ -517,6 +517,9 @@ contract SuperValve is SuperAppBase, AccessControl {
         bytes calldata _cbdata,
         bytes calldata _ctx
     ) external override returns (bytes memory newCtx) {
+        if (_cbdata.length == 0) {
+            return _ctx;
+        }
         newCtx = _modifyMultiFlow(_agreementId, true, _cbdata, _ctx);
     }
 

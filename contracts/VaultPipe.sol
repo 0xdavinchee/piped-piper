@@ -28,10 +28,6 @@ contract VaultPipe is Pipe {
         vault.depositTokens(_amount, _sender);
     }
 
-    function _vaultAddress() public view override returns (address) {
-        return address(vault);
-    }
-
     /** @dev Overrides the Vault abstract contract's _withdrawToVault function
      * by utilizing the external contract's interface.
      */
@@ -39,12 +35,5 @@ contract VaultPipe is Pipe {
         bool depositSuccess = IERC20(vault).transfer(address(vault), _amount);
         require(depositSuccess, "VaultPipe: Deposit transfer failed.");
         vault.withdrawTokens(_amount, _user);
-    }
-
-    /** @dev Overrides the Vault abstract contract's _vaultBalanceOf function
-     * by utilizing the external contract's interface.
-     */
-    function _vaultBalanceOf(address _pipeAddress) public view override returns (uint256) {
-        return vault.balanceOf(_pipeAddress);
     }
 }

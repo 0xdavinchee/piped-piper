@@ -11,6 +11,4 @@ abstract contract Vault {
     function _vaultAddress() public virtual returns (address) {}
 
     function _withdrawFromVault(uint256 amount, address user) public virtual {}
-
-    function _vaultBalanceOf(address pipeAddress) public view virtual returns (uint256) {}
 }

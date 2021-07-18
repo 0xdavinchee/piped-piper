@@ -29,8 +29,4 @@ interface IPipe {
      * of the userWithdrawData mapping.
      */
     function setUserFlowWithdrawData(address _depositor, int96 _previousFlowRate) external;
-
-    /** @dev Returns the amount of flowed tokens that are withdrawable by the _depositor.
-     */
-    function withdrawableFlowBalance(address _depositor, int96 _flowRate) external view returns (int256);
 }
