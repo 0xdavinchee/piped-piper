@@ -340,6 +340,67 @@ describe("SuperValve Tests", () => {
         await checkRevertResults(revertedModifyFlowPromise, revertString);
     };
 
+    const executeWithdrawalTestForUsers = async (hasFlows: boolean) => {
+        const PIPE_ADDRESSES = [Admin.VaultPipe.address, Admin.VaultPipe2.address];
+        let preWithdrawalFlowBalance = [];
+
+        // get user total flowed
+        for (let i = 0; i < userAddresses.length; i++) {
+            const [userFlowBalance] = await Admin.SuperValve.getUserTotalFlowedBalance(userAddresses[i]);
+            preWithdrawalFlowBalance.push(userFlowBalance);
+        }
+        for (let i = 0; i < Users.length; i++) {
+            const txn = await Users[i].SuperValve.withdraw(PIPE_ADDRESSES);
+            const res = await txn.wait();
+            const withdrawalSignature = ethers.utils.solidityKeccak256(["string"], ["Withdrawal(uint256)"]);
+            const withdrawalEvent = res.logs.filter(x => x.topics.includes(withdrawalSignature))[0];
+            const withdrawalAmount = withdrawalEvent
+                ? ethers.BigNumber.from(withdrawalEvent.data)
+                : ethers.BigNumber.from(0);
+            const flowBalanceNum = toNum(preWithdrawalFlowBalance[i]);
+            const withdrawalAmountNum = toNum(withdrawalAmount);
+            console.log(
+                names[Users[i].address] + " withdrawing from SuperValve, total flowed balance: " + flowBalanceNum,
+            );
+            console.log("Actual Withdrawal Amount: ", withdrawalAmountNum);
+            const difference = flowBalanceNum - withdrawalAmountNum;
+            console.log("Difference: ", difference);
+        }
+
+        // we test less than here because they still have ongoing flows after withdrawal, so it probably won't be 0
+        if (hasFlows) {
+            console.log("Expect all the flow balances after withdrawal to be less than pre withdrawal balance.");
+            for (let i = 0; i < userAddresses.length; i++) {
+                const [userFlowBalance] = await Admin.SuperValve.getUserTotalFlowedBalance(userAddresses[i]);
+                console.log(
+                    "Expect " +
+                        names[userAddresses[i]] +
+                        " flow balance after withdrawal: " +
+                        userFlowBalance +
+                        " to be less than flow balance before withdrawal: " +
+                        preWithdrawalFlowBalance[i],
+                );
+                expect(toNum(userFlowBalance)).to.be.lessThan(toNum(preWithdrawalFlowBalance[i]));
+            }
+
+            // we know balance will be 0 because the user has stopped their flows and withdrawn
+        } else {
+            console.log("Expect all the user flow balances to be 0 after withdrawal.");
+            // get user total flowed after withdrawal
+            for (let i = 0; i < userAddresses.length; i++) {
+                const [userFlowBalance] = await Admin.SuperValve.getUserTotalFlowedBalance(userAddresses[i]);
+                console.log(
+                    "Expect " +
+                        names[userAddresses[i]] +
+                        " flow balance after withdrawal: " +
+                        userFlowBalance +
+                        " to be 0 after withdrawal and stopping flows.",
+                );
+                expect(toNum(userFlowBalance)).to.be.eq(0);
+            }
+        }
+    };
+
     describe("Admin Permissions Tests", () => {
         it("Should handle add/remove pipe address cases", async () => {
             await expect(Admin.SuperValve.addPipeAddress(Alice.address))
@@ -597,47 +658,7 @@ describe("SuperValve Tests", () => {
     });
 
     describe("Withdrawal/Deposit Tests", () => {
-        it("Should be able to withdraw funds while flows are ongoing.", async () => {
-            const PIPE_ADDRESSES = [Admin.VaultPipe.address, Admin.VaultPipe2.address];
-            let flowAfterThirtyDays = [];
-
-            // create flow to superValve
-            await executeModifyFlowTestsForUsers(sf.cfa.createFlow, null);
-
-            // go 30 days into the future
-            await hre.network.provider.send("evm_increaseTime", [86400 * 30]);
-            await hre.network.provider.send("evm_mine");
-
-            // get user total flowed
-            for (let i = 0; i < userAddresses.length; i++) {
-                const [userFlowBalance] = await Admin.SuperValve.getUserTotalFlowedBalance(userAddresses[i]);
-                flowAfterThirtyDays.push(userFlowBalance);
-            }
-
-            // withdraw funds from super valve
-            for (let i = 0; i < Users.length; i++) {
-                console.log(names[Users[i].address] + " withdrawing from SuperValve.");
-                await Users[i].SuperValve.withdraw(PIPE_ADDRESSES);
-            }
-
-            // get user total flowed after withdrawal
-            for (let i = 0; i < userAddresses.length; i++) {
-                const [userFlowBalance] = await Admin.SuperValve.getUserTotalFlowedBalance(userAddresses[i]);
-                console.log(
-                    "Expect " +
-                        names[userAddresses[i]] +
-                        " flow balance after withdrawal: " +
-                        userFlowBalance +
-                        " to be less than flow balance after 30 days: " +
-                        flowAfterThirtyDays[i],
-                );
-                expect(toNum(userFlowBalance)).to.be.lessThan(toNum(flowAfterThirtyDays[i]));
-            }
-        });
-
-        it("Should be able to withdraw funds after stopping flows.", async () => {
-            const PIPE_ADDRESSES = [Admin.VaultPipe.address, Admin.VaultPipe2.address];
-            let flowAfterThirtyDays = [];
+        it("Should be able to withdraw funds while flows are ongoing and after stopping.", async () => {
             const deleteFlowData = getModifyFlowUserData([
                 { pipeAddress: Admin.VaultPipe.address, percentage: "0" },
                 { pipeAddress: Admin.VaultPipe2.address, percentage: "0" },
@@ -650,38 +671,21 @@ describe("SuperValve Tests", () => {
             await hre.network.provider.send("evm_increaseTime", [86400 * 30]);
             await hre.network.provider.send("evm_mine");
 
+            // withdraw funds from super valve and execute tests
+            await executeWithdrawalTestForUsers(true);
+
+            // go 30 days into the future
+            await hre.network.provider.send("evm_increaseTime", [86400 * 30]);
+            await hre.network.provider.send("evm_mine");
+
             // delete flows
             await executeModifyFlowTestsForUsers(sf.cfa.deleteFlow, 0, deleteFlowData);
 
-            // get user total flowed
-            for (let i = 0; i < userAddresses.length; i++) {
-                const [userFlowBalance] = await Admin.SuperValve.getUserTotalFlowedBalance(userAddresses[i]);
-                flowAfterThirtyDays.push(userFlowBalance);
-            }
-
-            // withdraw funds from super valve
-            for (let i = 0; i < Users.length; i++) {
-                console.log(names[Users[i].address] + " withdrawing from SuperValve.");
-                await Users[i].SuperValve.withdraw(PIPE_ADDRESSES);
-            }
-
-            // get user total flowed after withdrawal
-            for (let i = 0; i < userAddresses.length; i++) {
-                const [userFlowBalance] = await Admin.SuperValve.getUserTotalFlowedBalance(userAddresses[i]);
-                console.log(
-                    "Expect " +
-                        names[userAddresses[i]] +
-                        " flow balance after withdrawal: " +
-                        userFlowBalance +
-                        " to be 0 after stopping flows and withdrawals",
-                );
-                expect(toNum(userFlowBalance)).to.be.eq(0);
-            }
+            // withdraw funds from super valve and execute tests
+            await executeWithdrawalTestForUsers(false);
         });
 
-        it("Should be able to deposit into vaults and withdraw from them.", async () => {
-            const PIPE_ADDRESSES = [Admin.VaultPipe.address, Admin.VaultPipe2.address];
-            let flowAfterThirtyDays = [];
+        it("Should be able to deposit and withdraw funds into vaults with ongoing flows and after stopping flows.", async () => {
             const deleteFlowData = getModifyFlowUserData([
                 { pipeAddress: Admin.VaultPipe.address, percentage: "0" },
                 { pipeAddress: Admin.VaultPipe2.address, percentage: "0" },
@@ -693,30 +697,18 @@ describe("SuperValve Tests", () => {
             // go 30 days into the future
             await hre.network.provider.send("evm_increaseTime", [86400 * 30]);
             await hre.network.provider.send("evm_mine");
-
-            // delete flows
-            await executeModifyFlowTestsForUsers(sf.cfa.deleteFlow, 0, deleteFlowData);
-
-            // get user total flowed
-            for (let i = 0; i < userAddresses.length; i++) {
-                const [userFlowBalance] = await Admin.SuperValve.getUserTotalFlowedBalance(userAddresses[i]);
-                flowAfterThirtyDays.push(userFlowBalance);
-            }
 
             // deposit funds into the vaults
             await Promise.all([Admin.VaultPipe.depositFundsIntoVault(), Admin.VaultPipe2.depositFundsIntoVault()]);
 
-            for (let i = 0; i < Users.length; i++) {
-                console.log(names[Users[i].address] + " withdrawing from SuperValve.");
-                await Users[i].SuperValve.withdraw(PIPE_ADDRESSES);
-            }
+            // withdraw funds from super valve and execute tests
+            await executeWithdrawalTestForUsers(true);
 
-            console.log("Expect all the user flow balances to be 0 after withdrawal.");
-            // get user total flowed after withdrawal
-            for (let i = 0; i < userAddresses.length; i++) {
-                const [userFlowBalance] = await Admin.SuperValve.getUserTotalFlowedBalance(userAddresses[i]);
-                expect(userFlowBalance).to.eq(0);
-            }
+            // delete flows
+            await executeModifyFlowTestsForUsers(sf.cfa.deleteFlow, 0, deleteFlowData);
+
+            // withdraw funds from super valve and execute tests
+            await executeWithdrawalTestForUsers(false);
         });
 
         it("Should not be able to withdraw from invalid pipe address.", async () => {

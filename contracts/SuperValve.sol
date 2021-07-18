@@ -133,7 +133,6 @@ contract SuperValve is SuperAppBase, AccessControl {
         valveFlowRateLastUpdated = block.timestamp;
 
         emit ValveBalanceUpdated(newValveBalance, block.timestamp);
-
         emit Withdrawal(totalWithdrawalAmount);
     }
 

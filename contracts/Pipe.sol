@@ -95,18 +95,22 @@ contract Pipe is Vault {
         return block.timestamp.toInt256().sub(getLastUpdatedTime(_user).toInt256()).mul(_flowRate).add(addAmount);
     }
 
+    function _getCurrentFlowBalance(address _user, int96 _previousFlowRate) internal view returns (int256) {
+        return
+            userFlowData[_user].flowBalance.add(
+                block.timestamp.toInt256().sub(userFlowData[_user].flowUpdatedTimestamp.toInt256()).mul(
+                    _previousFlowRate
+                )
+            );
+    }
+
     /**
      * @dev Updates the timestamp of the total amount the user has flowed into the Pipe,
      * when the user flow amount last updated as well as the amount of flow since the user
      * last updated their flow agreement.
      */
     function setUserFlowWithdrawData(address _user, int96 _previousFlowRate) external {
-        int256 flowBalance =
-            userFlowData[_user].flowBalance.add(
-                block.timestamp.toInt256().sub(userFlowData[_user].flowUpdatedTimestamp.toInt256()).mul(
-                    _previousFlowRate
-                )
-            );
+        int256 flowBalance = _getCurrentFlowBalance(_user, _previousFlowRate);
         userFlowData[_user].flowAmountSinceUpdate = _withdrawableFlowAmount(_user, _previousFlowRate);
         userFlowData[_user].flowBalance = flowBalance;
         userFlowData[_user].flowUpdatedTimestamp = block.timestamp;
@@ -177,8 +181,7 @@ contract Pipe is Vault {
      * @dev Withdraws any deposited tokens from a vault as well as the flow amount and updates the state accordingly.
      */
     function _withdraw(int96 _flowRate, address _user) internal returns (uint256) {
-        uint256 totalVaultBalance = _vaultBalanceOf(address(this));
-        uint256 availableVaultWithdrawAmount = _vaultRewardBalanceOf(_user, totalVaultBalance);
+        uint256 availableVaultWithdrawAmount = _vaultRewardBalanceOf(_user, _flowRate);
         int256 availableFlowWithdraw = _withdrawableFlowAmount(_user, _flowRate);
 
         // withdrawable vault amount (incl. rewards) + user's _withdrawableFlowAmount
@@ -221,23 +224,21 @@ contract Pipe is Vault {
      * as well as the amount of tokens that haven't been deposited but have been flowed into the Pipe.
      */
     function totalWithdrawableBalance(address _withdrawer, int96 _flowRate) external view returns (int256) {
-        uint256 totalVaultBalance = _vaultBalanceOf(address(this));
         int256 availableFlowWithdraw = _withdrawableFlowAmount(_withdrawer, _flowRate);
-        int256 vaultReward = _vaultRewardBalanceOf(_withdrawer, totalVaultBalance).toInt256();
+        int256 vaultReward = _vaultRewardBalanceOf(_withdrawer, _flowRate).toInt256();
         return availableFlowWithdraw.add(vaultReward);
     }
 
     /**
-     * @dev Returns _depositor deposit in a vault and any rewards accrued,
-     * calculated based on their share of the Pipe deposits.
+     * @dev Returns _depositor deposit. Note: this only allows the user to withdraw what they deposited in,
+     * it does not work in the case where the vault accrues interest.
      */
-    function _vaultRewardBalanceOf(address _withdrawer, uint256 _vaultBalance) internal view returns (uint256) {
-        uint256 totalVaultWithdrawableAmount = userFlowData[_withdrawer]
-                    .flowBalance
-                    .mul(10 ** 18)
-                    .div(inflowToPipeData.pipeFlowBalance)
-                    .toUint256()
-                    .mul(_vaultBalance);
-        return totalVaultWithdrawableAmount.div(10 ** 18);
+    function _vaultRewardBalanceOf(address _withdrawer, int96 _flowRate) internal view returns (uint256) {
+        int256 currentFlowBalance = _getCurrentFlowBalance(_withdrawer, _flowRate);
+        uint256 totalVaultWithdrawableAmount =
+            currentFlowBalance < _withdrawableFlowAmount(_withdrawer, _flowRate)
+                ? 0
+                : currentFlowBalance.sub(_withdrawableFlowAmount(_withdrawer, _flowRate)).toUint256();
+        return totalVaultWithdrawableAmount;
     }
 }
