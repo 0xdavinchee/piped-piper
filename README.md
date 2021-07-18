@@ -54,14 +54,14 @@ To get a local copy up and running follow these simple steps.
     ```
 2. Install NPM packages
     ```sh
-    yarn install
+    npm install
     ```
 3. Create a `.env` file and add the two following values:
 
--   `MNEMONIC`: A mnemonic for accounts.
+-   `MNEMONIC`: A mnemonic for accounts
+-   `TEST_ACCOUNT_PRIVATE_KEY`: Private key for deployment.
 -   `HOST_ADDRESS`: The address of the Superfluid host contract on the network you plan on deploying to.
 -   `CFA_ADDRESS`: The address of the Superfluid Constant Flow Agreement V1 contract on the network you plan on deploying to.
--   `TOKEN_ADDRESS`: The address of the SuperToken on the network you plan on deploying to.
 -   `INFURA_API_KEY`: You can get this from https://infura.io by signing up for a free account.
 
 <!-- USAGE EXAMPLES -->
@@ -72,9 +72,11 @@ To compile: `npx hardhat compile`.
 
 To run tests: `npx hardhat test`.
 
-Run `npx hardhat node` to start up a local node.
+To get test coverage: `npx hardhat coverage`.
 
-Open up another terminal window and run `npx hardhat deploy --network localhost` to deploy your project to localhost. You can similarly deploy to other networks like so: `npx hardhat deploy --network <NETWORK>`
+To deploy your smart contracts on a network, run `npx hardhat deploy --network <NETWORK>`, you can select one of the networks defined in `hardhat.config.ts`.
+
+To use this with the front end `cd` into the `frontend` folder and run `npm start`. Note: You will need to create a `.env` file with `REACT_APP_SUPER_VALVE_ADDRESS` which is the address of your SuperValve. You can choose to add more SuperValve's in the future by editing the `VALVE_DATA` variable in `PipedPiper.tsx`.
 
 <!-- LICENSE -->
 

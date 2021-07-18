@@ -12,7 +12,7 @@ import { requestAccount } from "../utils/helpers";
 
 const VALVE_DATA: IValveData[] = [
     {
-        address: process.env.REACT_APP_fUSDC_SUPER_VALVE_ADDRESS || "",
+        address: process.env.REACT_APP_SUPER_VALVE_ADDRESS || "",
         currency: "fUSDC",
         image_url: "https://s2.coinmarketcap.com/static/img/coins/64x64/3408.png",
     },
