@@ -2825,7 +2825,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@ethersproject/abi@npm:^5.4.0":
+"@ethersproject/abi@npm:^5.2.0, @ethersproject/abi@npm:^5.4.0":
   version: 5.4.0
   resolution: "@ethersproject/abi@npm:5.4.0"
   dependencies:
@@ -4074,16 +4074,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@superfluid-finance/js-sdk@npm:^0.4.3":
-  version: 0.4.3
-  resolution: "@superfluid-finance/js-sdk@npm:0.4.3"
+"@superfluid-finance/js-sdk@npm:^0.5.1":
+  version: 0.5.1
+  resolution: "@superfluid-finance/js-sdk@npm:0.5.1"
   dependencies:
+    "@ethersproject/abi": ^5.2.0
     "@ethersproject/hash": ^5.0.12
     auto-bind: ^4.0.0
   peerDependencies:
     "@ethersproject/contracts": ^5.0.12
     "@truffle/contract": ^4.0.0
-  checksum: 66a018e0e2563d07cc24fc6789fc276d23228600c86422c15efe5799d10b74662fa904cb75b4ce7b049874ab10512112dad467624a57723cd2696ae64124a4d3
+  checksum: 40c7e1ccd968ecef902ce8fae0cf6d21ab92603fa5c2b8057bbae671d51e97a1339e522f55e51a2f86ba6a82eac191f9dc5d2c6799783e30159fe5ecd7f46813
   languageName: node
   linkType: hard
 
@@ -9252,7 +9253,7 @@ __metadata:
   dependencies:
     "@ethersproject/contracts": ^5.4.0
     "@material-ui/core": ^4.11.4
-    "@superfluid-finance/js-sdk": ^0.4.3
+    "@superfluid-finance/js-sdk": ^0.5.1
     "@types/react-dom": ^17.0.8
     "@types/react-router-dom": ^5.1.7
     cra-template-typescript: 1.1.2

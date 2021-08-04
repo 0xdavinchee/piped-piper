@@ -35,7 +35,7 @@
     "devDependencies": {
         "@ethersproject/contracts": "^5.4.0",
         "@material-ui/core": "^4.11.4",
-        "@superfluid-finance/js-sdk": "^0.4.3",
+        "@superfluid-finance/js-sdk": "^0.5.1",
         "@types/react-dom": "^17.0.8",
         "@types/react-router-dom": "^5.1.7",
         "ethers": "^5.3.1",

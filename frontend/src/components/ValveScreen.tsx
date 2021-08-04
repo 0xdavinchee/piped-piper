@@ -1,5 +1,5 @@
 import { Button, Card, CardContent, CircularProgress, Container, TextField, Typography } from "@material-ui/core";
-import LinearProgress from '@material-ui/core/LinearProgress';
+import LinearProgress from "@material-ui/core/LinearProgress";
 import SuperfluidSDK from "@superfluid-finance/js-sdk";
 import { Web3Provider } from "@ethersproject/providers";
 import { useParams } from "react-router-dom";
@@ -8,6 +8,7 @@ import { initializeContract } from "../utils/helpers";
 import { IUserPipeData } from "../utils/interfaces";
 import VaultPipeCard from "./VaultPipeCard";
 import { ethers } from "ethers";
+import Framework from "@superfluid-finance/js-sdk/src/Framework";
 
 interface IValveProps {
     readonly currency: string;
@@ -36,7 +37,7 @@ const Valve = (props: IValveProps) => {
     const [fetching, setFetching] = useState(false);
 
     // Superfluid State
-    const [sf, setSf] = useState<any>(); // TODO: move this to PipedPiper.tsx so nav has access to this as well
+    const [sf, setSf] = useState<Framework>(); // TODO: move this to PipedPiper.tsx so nav has access to this as well
     const [token, setToken] = useState("");
 
     // Valve Flow State
@@ -63,12 +64,14 @@ const Valve = (props: IValveProps) => {
      *************************************************************************/
     const getAndSetFlowData = async (tokenAddress: string) => {
         const contract = initializeContract(true, address);
-        if (!contract) return;
-        const valveFlowData: { inFlows: IFlowData[]; outFlows: IFlowData[] } = await sf.cfa.listFlows({
+        if (!contract || !sf) return;
+        const valveFlowData: { inFlows: IFlowData[]; outFlows: IFlowData[] } = await sf.cfa!.listFlows({
             superToken: tokenAddress,
             account: address,
+            onlyInFlows: false,
+            onlyOutFlows: false,
         });
-        const userToValveFlowData = await sf.cfa.getFlow({
+        const userToValveFlowData = await sf.cfa!.getFlow({
             superToken: tokenAddress,
             sender: props.userAddress,
             receiver: address,
@@ -116,12 +119,13 @@ const Valve = (props: IValveProps) => {
     const createFlow = async () => {
         if (!sf || !token) return;
         try {
-            await sf.cfa.createFlow({
+            await sf.cfa!.createFlow({
                 superToken: token,
                 sender: props.userAddress,
                 receiver: address,
-                flowRate: getFlowRatePerSecond(inputFlowRate),
+                flowRate: getFlowRatePerSecond(inputFlowRate).toString(),
                 userData: getCreateUpdateFlowUserData(),
+                onTransaction: () => {},
             });
             await getAndSetFlowData(token);
         } catch (error) {
@@ -134,12 +138,13 @@ const Valve = (props: IValveProps) => {
     const updateFlow = async () => {
         if (!sf || !token) return;
         try {
-            await sf.cfa.updateFlow({
+            await sf.cfa!.updateFlow({
                 superToken: token,
                 sender: props.userAddress,
                 receiver: address,
-                flowRate: getFlowRatePerSecond(inputFlowRate),
+                flowRate: getFlowRatePerSecond(inputFlowRate).toString(),
                 userData: getCreateUpdateFlowUserData(),
+                onTransaction: () => {},
             });
             await getAndSetFlowData(token);
         } catch (error) {
@@ -153,11 +158,13 @@ const Valve = (props: IValveProps) => {
         if (!sf || !token) return;
         try {
             setFetching(true);
-            await sf.cfa.deleteFlow({
+            await sf.cfa!.deleteFlow({
                 superToken: token,
                 sender: props.userAddress,
                 receiver: address,
                 userData: getDeleteFlowUserData(),
+                by: "",
+                onTransaction: () => {},
             });
             await getAndSetFlowData(token);
         } catch (error) {
@@ -415,7 +422,9 @@ const Valve = (props: IValveProps) => {
                                 <Button
                                     className="button flow-button"
                                     color="primary"
-                                    disabled={fetching || !isFullyAllocated || !inputFlowRate || Number(inputFlowRate) <= 0}
+                                    disabled={
+                                        fetching || !isFullyAllocated || !inputFlowRate || Number(inputFlowRate) <= 0
+                                    }
                                     variant="contained"
                                     onClick={() => createOrUpdateFlow()}
                                 >
@@ -441,10 +450,14 @@ const Valve = (props: IValveProps) => {
                                 </Button>
                             </div>
                         </div>
-                        {fetching && <div className="updating-flows-loading">
-                            <Typography className="updating-flow-text" variant="body1">Plumbing...</Typography>
-                            <LinearProgress />
-                        </div>}
+                        {fetching && (
+                            <div className="updating-flows-loading">
+                                <Typography className="updating-flow-text" variant="body1">
+                                    Plumbing...
+                                </Typography>
+                                <LinearProgress />
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
